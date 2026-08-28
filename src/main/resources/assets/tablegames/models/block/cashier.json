@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "top": "tablegames:block/cashier_top",
+    "front": "tablegames:block/cashier_front",
+    "side": "tablegames:block/cashier_side"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "tablegames:block/shop" },
+    "facing=east":  { "model": "tablegames:block/shop", "y": 90 },
+    "facing=south": { "model": "tablegames:block/shop", "y": 180 },
+    "facing=west":  { "model": "tablegames:block/shop", "y": 270 }
+  }
+}

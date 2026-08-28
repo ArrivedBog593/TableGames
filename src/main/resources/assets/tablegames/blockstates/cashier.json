@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "tablegames:block/cashier" },
+    "facing=east":  { "model": "tablegames:block/cashier", "y": 90 },
+    "facing=south": { "model": "tablegames:block/cashier", "y": 180 },
+    "facing=west":  { "model": "tablegames:block/cashier", "y": 270 }
+  }
+}

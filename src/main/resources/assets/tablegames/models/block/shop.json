@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "top": "tablegames:block/shop_top",
+    "front": "tablegames:block/shop_front",
+    "side": "tablegames:block/shop_side"
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "variants": {
+    "facing=north,variant=blank": {
+      "model": "tablegames:block/table_blank"
+    },
+    "facing=east,variant=blank": {
+      "model": "tablegames:block/table_blank",
+      "y": 90
+    },
+    "facing=south,variant=blank": {
+      "model": "tablegames:block/table_blank",
+      "y": 180
+    },
+    "facing=west,variant=blank": {
+      "model": "tablegames:block/table_blank",
+      "y": 270
+    },
+    "facing=north,variant=wheel": {
+      "model": "tablegames:block/table_wheel"
+    },
+    "facing=east,variant=wheel": {
+      "model": "tablegames:block/table_wheel",
+      "y": 90
+    },
+    "facing=south,variant=wheel": {
+      "model": "tablegames:block/table_wheel",
+      "y": 180
+    },
+    "facing=west,variant=wheel": {
+      "model": "tablegames:block/table_wheel",
+      "y": 270
+    },
+    "facing=north,variant=cards": {
+      "model": "tablegames:block/table_cards"
+    },
+    "facing=east,variant=cards": {
+      "model": "tablegames:block/table_cards",
+      "y": 90
+    },
+    "facing=south,variant=cards": {
+      "model": "tablegames:block/table_cards",
+      "y": 180
+    },
+    "facing=west,variant=cards": {
+      "model": "tablegames:block/table_cards",
+      "y": 270
+    },
+    "facing=north,variant=slots": {
+      "model": "tablegames:block/table_slots"
+    },
+    "facing=east,variant=slots": {
+      "model": "tablegames:block/table_slots",
+      "y": 90
+    },
+    "facing=south,variant=slots": {
+      "model": "tablegames:block/table_slots",
+      "y": 180
+    },
+    "facing=west,variant=slots": {
+      "model": "tablegames:block/table_slots",
+      "y": 270
+    },
+    "facing=north,variant=dice": {
+      "model": "tablegames:block/table_dice"
+    },
+    "facing=east,variant=dice": {
+      "model": "tablegames:block/table_dice",
+      "y": 90
+    },
+    "facing=south,variant=dice": {
+      "model": "tablegames:block/table_dice",
+      "y": 180
+    },
+    "facing=west,variant=dice": {
+      "model": "tablegames:block/table_dice",
+      "y": 270
+    }
+  }
+}

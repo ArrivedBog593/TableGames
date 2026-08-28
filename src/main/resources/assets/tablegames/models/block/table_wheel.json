@@ -1,0 +1,6 @@
+{
+  "parent": "tablegames:block/table_blank",
+  "textures": {
+    "top": "tablegames:block/table_top_wheel"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "values": {
+    "minecraft:iron_nugget": 1,
+    "minecraft:iron_ingot": 9,
+    "minecraft:iron_block": 81,
+    "minecraft:gold_nugget": 3,
+    "minecraft:gold_ingot": 27,
+    "minecraft:gold_block": 243,
+    "minecraft:diamond": 110,
+    "minecraft:diamond_block": 990,
+    "minecraft:emerald": 60,
+    "minecraft:emerald_block": 540
+  }
+}
