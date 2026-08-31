@@ -18,7 +18,7 @@ import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
  * they move items — so they get menus. Table games open through
  * {@link TableScreens} instead.
  */
-@EventBusSubscriber(modid = TableGames.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = TableGames.MOD_ID, value = Dist.CLIENT)
 public final class ClientSetup {
 
     private ClientSetup() {
@@ -28,5 +28,6 @@ public final class ClientSetup {
     public static void registerScreens(RegisterMenuScreensEvent event) {
         event.register(ModMenus.CASHIER.get(), CashierScreen::new);
         event.register(ModMenus.SHOP.get(), ShopScreen::new);
+        event.register(ModMenus.ADMIN_SHOP.get(), AdminShopScreen::new);
     }
 }

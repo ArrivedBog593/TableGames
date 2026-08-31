@@ -1,6 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
 import net.minecraft.util.StringRepresentable;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Locale;
 
@@ -19,7 +20,7 @@ import java.util.Locale;
  * <p>
  * Keeping appearance separate from the game id is what lets one registered
  * block serve every game, so adding a game stays a matter of writing one
- * class rather than registering a block, an item, a model and a recipe.
+ * class rather than registering a block, an item, a model, and a recipe.
  */
 public enum TableVariant implements StringRepresentable {
 
@@ -45,11 +46,11 @@ public enum TableVariant implements StringRepresentable {
      * these orphans the matching model file.
      */
     @Override
-    public String getSerializedName() {
+    public @NotNull String getSerializedName() {
         return serializedName;
     }
 
-    /** Same string, for building asset paths. */
+    /** Same string for building asset paths. */
     public String assetName() {
         return serializedName;
     }

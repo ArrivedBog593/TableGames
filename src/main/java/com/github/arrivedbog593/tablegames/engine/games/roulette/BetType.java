@@ -101,4 +101,18 @@ public enum BetType {
             case STRAIGHT_UP -> throw new IllegalStateException("handled above");
         };
     }
+
+    /**
+     * Whether this is an inside bet — one placed on the numbered grid rather
+     * than on the surrounding boxes.
+     * <p>
+     * The split a real table draws when it posts two maximums: inside bets
+     * pay steeply and are capped low, outside bets pay little and are capped
+     * far higher, because the same stake exposes the house to wildly
+     * different amounts. Derived from the payout rather than listed by hand,
+     * so a split or a corner added later classifies itself.
+     */
+    public boolean isInside() {
+        return payoutRatio >= 5;
+    }
 }

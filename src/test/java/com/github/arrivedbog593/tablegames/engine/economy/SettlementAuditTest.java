@@ -52,7 +52,7 @@ class SettlementAuditTest {
 
     @Test
     void aPvpHandThatCreatesCreditsIsRefused() {
-        // Alice gains 200 but Bob only lost 100. Fifty credits from nowhere.
+        // Alice gains 200, but Bob only lost 100. Fifty credits from nowhere.
         SettlementAudit.Verdict verdict = SettlementAudit.audit(
                 outcome(0, List.of(ALICE),
                         new Payout(ALICE, 200), new Payout(BOB, -100)),
@@ -148,7 +148,7 @@ class SettlementAuditTest {
                 outcome(0, List.of(ALICE), new Payout(ALICE, 100)),
                 true, BROKE);
 
-        assertTrue(verdict.approved(), "broke afterwards is not the same as overdrawn");
+        assertTrue(verdict.approved(), "broke afterward is not the same as overdrawn");
     }
 
     @Test

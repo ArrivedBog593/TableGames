@@ -26,7 +26,7 @@ import org.jetbrains.annotations.NotNull;
  * The casino cashier: items in, credits out, and back again.
  * <p>
  * A separate block from the gaming table because it is not a game. It has no
- * players, no turns and no outcome, so routing it through the game registry
+ * players, no turns, and no outcome, so routing it through the game registry
  * would mean {@code Game} describing something that is not one.
  */
 public class CashierBlock extends BaseEntityBlock {
@@ -77,7 +77,7 @@ public class CashierBlock extends BaseEntityBlock {
             return InteractionResult.PASS;
         }
 
-        // The catalogue has to reach the client before the screen opens, or
+        // The catalog has to reach the client before the screen opens, or
         // the first frame renders an empty list.
         PacketDistributor.sendToPlayer(serverPlayer, CashierCatalogPayload.current());
         serverPlayer.openMenu(provider, buffer -> buffer.writeBlockPos(pos));

@@ -8,7 +8,6 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
@@ -16,6 +15,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,7 +32,7 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
     private static final ResourceLocation BACKGROUND = ResourceLocation
             .fromNamespaceAndPath(TableGames.MOD_ID, "textures/gui/cashier.png");
 
-    /** Catalogue rows drawn at once. */
+    /** Catalog rows drawn at once. */
     private static final int VISIBLE_ROWS = 4;
     private static final int ROW_HEIGHT = 20;
     private static final int LIST_X = 76;
@@ -110,7 +110,7 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
             CashierCatalogPayload.Entry entry = entries.get(scroll + row);
             int rowY = y + row * ROW_HEIGHT;
             boolean hovered = isOver(mouseX, mouseY, x, rowY, LIST_WIDTH, ROW_HEIGHT - 2);
-            boolean affordable = menu.balance() >= entry.value();
+            boolean affordable = menu.balance() >= entry.buyback();
 
             graphics.fill(x, rowY, x + LIST_WIDTH, rowY + ROW_HEIGHT - 2,
                     hovered ? 0x40FFFFFF : 0x20000000);
@@ -118,7 +118,7 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
             Optional<Item> item = ItemIds.item(entry.itemId());
             item.ifPresent(value -> graphics.renderItem(new ItemStack(value), x + 2, rowY + 1));
 
-            graphics.drawString(font, Component.literal(format(entry.value())),
+            graphics.drawString(font, Component.literal(format(entry.buyback())),
                     x + 22, rowY + 5, affordable ? 0xFFFFFF : 0xFF6B6B, false);
         }
 
@@ -146,13 +146,23 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
                 continue;
             }
             CashierCatalogPayload.Entry entry = entries.get(scroll + row);
-            graphics.renderComponentTooltip(font, List.of(
-                            ItemIds.displayName(entry.itemId()),
-                            Component.translatable("tablegames.cashier.unit_price",
-                                    format(entry.value())).withStyle(ChatFormatting.GRAY),
-                            Component.translatable("tablegames.cashier.click_hint")
-                                    .withStyle(ChatFormatting.DARK_GRAY)),
-                    mouseX, mouseY);
+            List<Component> lines = new ArrayList<>();
+            lines.add(ItemIds.displayName(entry.itemId()));
+            if (entry.buyback() == entry.value()) {
+                lines.add(Component.translatable("tablegames.cashier.unit_price",
+                        format(entry.value())).withStyle(ChatFormatting.GRAY));
+            } else {
+                // Both directions, separately, once they stop matching. The
+                // list buys items, so quoting only what selling one pays puts
+                // the wrong number next to the button that spends it.
+                lines.add(Component.translatable("tablegames.cashier.buy_price",
+                        format(entry.buyback())).withStyle(ChatFormatting.GRAY));
+                lines.add(Component.translatable("tablegames.cashier.sell_price",
+                        format(entry.value())).withStyle(ChatFormatting.DARK_GRAY));
+            }
+            lines.add(Component.translatable("tablegames.cashier.click_hint")
+                    .withStyle(ChatFormatting.DARK_GRAY));
+            graphics.renderComponentTooltip(font, lines, mouseX, mouseY);
             return;
         }
     }

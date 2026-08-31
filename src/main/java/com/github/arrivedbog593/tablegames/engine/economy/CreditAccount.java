@@ -58,6 +58,19 @@ public final class CreditAccount {
     }
 
     /**
+     * Whether a balance could take a deposit without breaching the cap.
+     * <p>
+     * Static and taking the balance as an argument so a caller can ask
+     * before it is committed to anything. A settlement that pays
+     * several players has to know every deposit will land before it debits
+     * the first loser; discovering the cap halfway through leaves a hand half
+     * settled with no clean way back.
+     */
+    public static boolean canHold(long balance, long amount) {
+        return amount >= 0 && balance >= 0 && amount <= MAX_BALANCE - balance;
+    }
+
+    /**
      * Adds credits.
      *
      * @return false if the deposit would breach {@link #MAX_BALANCE}, in

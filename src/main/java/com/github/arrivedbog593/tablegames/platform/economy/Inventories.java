@@ -24,17 +24,30 @@ final class Inventories {
      * <p>
      * Counts partially filled stacks as well as empty slots, so a player
      * holding sixty diamonds in one slot is correctly seen as having room for
-     * four more there. Armour and the offhand are excluded: they are worn
+     * four more there. Armor and the offhand are excluded: they are worn
      * equipment, not storage.
      */
     static long spaceFor(ServerPlayer player, Item item) {
-        int maxStack = new ItemStack(item).getMaxStackSize();
+        return spaceFor(player, new ItemStack(item));
+    }
+
+    /**
+     * How many copies of a stack the main inventory can still take.
+     * <p>
+     * Matched with {@link ItemStack#isSameItemSameComponents}, not by item
+     * alone. An enchanted sword will not merge with a plain one, so counting
+     * the plain one's slot as room would promise space that does not exist —
+     * and the shop now sells stacks that carry components.
+     */
+    static long spaceFor(ServerPlayer player, ItemStack prototype) {
+        int maxStack = prototype.getMaxStackSize();
         long room = 0;
         for (int slot = 0; slot < player.getInventory().items.size(); slot++) {
             ItemStack existing = player.getInventory().items.get(slot);
             if (existing.isEmpty()) {
                 room += maxStack;
-            } else if (existing.getItem() == item && existing.getCount() < maxStack) {
+            } else if (ItemStack.isSameItemSameComponents(existing, prototype)
+                    && existing.getCount() < maxStack) {
                 room += maxStack - existing.getCount();
             }
         }
@@ -49,12 +62,19 @@ final class Inventories {
      * picked up, a deleted one is simply gone.
      */
     static void give(ServerPlayer player, Item item, long count) {
-        int maxStack = new ItemStack(item).getMaxStackSize();
+        give(player, new ItemStack(item), count);
+    }
+
+    /** Hands over copies of a stack, components and all. */
+    static void give(ServerPlayer player, ItemStack prototype, long count) {
+        int maxStack = prototype.getMaxStackSize();
         List<ItemStack> stacks = new ArrayList<>();
         long left = count;
         while (left > 0) {
             int size = (int) Math.min(left, maxStack);
-            stacks.add(new ItemStack(item, size));
+            ItemStack portion = prototype.copy();
+            portion.setCount(size);
+            stacks.add(portion);
             left -= size;
         }
         for (ItemStack stack : stacks) {

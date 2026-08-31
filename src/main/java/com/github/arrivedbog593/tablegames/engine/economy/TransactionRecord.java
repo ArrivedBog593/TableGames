@@ -42,7 +42,7 @@ public record TransactionRecord(long sequence, String timestamp, TransactionType
         return HOUSE.equals(owner);
     }
 
-    /** Serialises to a single log line, without a trailing newline. */
+    /** Serializes to a single log line, without a trailing newline. */
     public String toLine() {
         return String.join(String.valueOf(SEPARATOR),
                 Long.toString(sequence),

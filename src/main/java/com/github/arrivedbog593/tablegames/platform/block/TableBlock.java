@@ -28,6 +28,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.network.PacketDistributor;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
@@ -60,7 +61,7 @@ public class TableBlock extends BaseEntityBlock {
     }
 
     @Override
-    protected MapCodec<? extends BaseEntityBlock> codec() {
+    protected @NotNull MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }
 
@@ -76,30 +77,30 @@ public class TableBlock extends BaseEntityBlock {
     }
 
     @Override
-    protected VoxelShape getShape(BlockState state, BlockGetter level,
-                                  BlockPos pos, CollisionContext context) {
+    protected @NotNull VoxelShape getShape(@NotNull BlockState state, @NotNull BlockGetter level,
+                                           @NotNull BlockPos pos, @NotNull CollisionContext context) {
         return SHAPE;
     }
 
     @Override
-    protected RenderShape getRenderShape(BlockState state) {
+    protected @NotNull RenderShape getRenderShape(@NotNull BlockState state) {
         return RenderShape.MODEL;
     }
 
     @Override
-    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+    public BlockEntity newBlockEntity(@NotNull BlockPos pos, @NotNull BlockState state) {
         return new TableBlockEntity(pos, state);
     }
 
     /**
      * Tables tick on the server only. A betting window has to run down whether
      * or not anyone is looking, and the client has no business deciding when
-     * the wheel spins.
+     * the wheelspins.
      */
     @Nullable
     @Override
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
-            Level level, BlockState state, BlockEntityType<T> type) {
+            Level level, @NotNull BlockState state, @NotNull BlockEntityType<T> type) {
         if (level.isClientSide) {
             return null;
         }
@@ -111,12 +112,12 @@ public class TableBlock extends BaseEntityBlock {
      * Opens the table's screen.
      * <p>
      * No menu is involved. Table games are not containers, so the server tells
-     * the client which screen to open and the client opens it. See
+     * the client which screen to open, and the client opens it. See
      * {@code OpenTableScreenPayload} for why.
      */
     @Override
-    protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos,
-                                               Player player, BlockHitResult hit) {
+    protected @NotNull InteractionResult useWithoutItem(@NotNull BlockState state, Level level, @NotNull BlockPos pos,
+                                                        @NotNull Player player, @NotNull BlockHitResult hit) {
         if (level.isClientSide) {
             return InteractionResult.SUCCESS;
         }
@@ -132,7 +133,10 @@ public class TableBlock extends BaseEntityBlock {
             return InteractionResult.CONSUME;
         }
 
-        table.addViewer(serverPlayer.getUUID());
+        // Opening a table makes you a spectator, never a player. Sitting
+        // down is its own button: eight seats can be full, and a ninth person
+        // still walks up to watch, which is the whole point of the split.
+        table.arrive(serverPlayer.getUUID());
         // State first, so the screen has something to draw on its first frame.
         PacketDistributor.sendToPlayer(serverPlayer,
                 RouletteStatePayload.forPlayer(level.getServer(), table, serverPlayer.getUUID()));
@@ -142,7 +146,7 @@ public class TableBlock extends BaseEntityBlock {
     }
 
     @Override
-    protected void onRemove(BlockState state, Level level, BlockPos pos,
+    protected void onRemove(BlockState state, @NotNull Level level, @NotNull BlockPos pos,
                             BlockState newState, boolean movedByPiston) {
         if (!state.is(newState.getBlock())
                 && level.getBlockEntity(pos) instanceof TableBlockEntity table) {

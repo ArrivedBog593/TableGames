@@ -1,10 +1,14 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
+import com.github.arrivedbog593.tablegames.engine.economy.CreditValueTable;
 import com.github.arrivedbog593.tablegames.engine.economy.HouseBankroll;
+import com.github.arrivedbog593.tablegames.engine.economy.HouseExposure;
 import com.github.arrivedbog593.tablegames.engine.economy.TransactionType;
+import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyEvents;
+import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
@@ -21,7 +25,7 @@ import net.minecraft.server.MinecraftServer;
  * The bankroll starts empty and is seeded here. That is deliberate: a casino
  * that opens with invented funds is a casino that mints credits, and the
  * operator putting real credits behind the tables is what makes every payout
- * afterwards honest.
+ * afterward honest.
  */
 public final class HouseCommands {
 
@@ -32,10 +36,15 @@ public final class HouseCommands {
     }
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("tablegames")
-                .requires(source -> source.hasPermission(2));
+        // The root carries no requirement, and each branch below carries its
+        // own. Brigadier merges same-named roots but keeps the requirement of
+        // whichever was registered first, so one gated root here would have
+        // gated every other class's commands too — including the one branch
+        // that has to work without operator rights.
+        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("tablegames");
 
         root.then(Commands.literal("house")
+                .requires(source -> source.hasPermission(2))
                 .executes(context -> status(context.getSource()))
                 .then(Commands.literal("add")
                         .then(Commands.argument("amount", LongArgumentType.longArg(1))
@@ -57,6 +66,12 @@ public final class HouseCommands {
                         .then(Commands.argument("credits", LongArgumentType.longArg(0))
                                 .executes(context -> reserve(context.getSource(),
                                         LongArgumentType.getLong(context, "credits")))))
+                .then(Commands.literal("spread")
+                        .then(Commands.argument("percent", IntegerArgumentType.integer(
+                                        CreditValueTable.NO_SPREAD,
+                                        CreditValueTable.MAX_SPREAD_PERCENT))
+                                .executes(context -> spread(context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "percent")))))
                 .then(Commands.literal("plan")
                         .then(Commands.argument("maxbet", LongArgumentType.longArg(1))
                                 .executes(context -> plan(context.getSource(),
@@ -75,14 +90,14 @@ public final class HouseCommands {
         MinecraftServer server = source.getServer();
         HouseBankroll bankroll = CreditStorage.get(server).bankroll(server);
 
-        ChatFormatting colour = switch (bankroll.status()) {
+        ChatFormatting color = switch (bankroll.status()) {
             case HEALTHY -> ChatFormatting.GREEN;
             case LOW -> ChatFormatting.YELLOW;
             case CLOSED -> ChatFormatting.RED;
         };
 
         source.sendSuccess(() -> Component.translatable(
-                "tablegames.house.balance", format(bankroll.balance())).withStyle(colour), false);
+                "tablegames.house.balance", format(bankroll.balance())).withStyle(color), false);
 
         if (!bankroll.isOpen()) {
             source.sendSuccess(() -> Component.translatable(
@@ -99,6 +114,22 @@ public final class HouseCommands {
                 "tablegames.house.limits",
                 format(bankroll.maximumBet(WORST_CASE_RATIO)),
                 format(bankroll.maximumBet(1))).withStyle(ChatFormatting.GRAY), false);
+
+        // What is actually committed right now, across every open table. The
+        // exposure ceiling above is what the house is willing to risk; this is
+        // how much of it is already spoken for.
+        int spread = EconomyData.get(source.getServer()).spreadPercent();
+        if (spread > CreditValueTable.NO_SPREAD) {
+            source.sendSuccess(() -> Component.translatable(
+                            "tablegames.house.spread_line", spread)
+                    .withStyle(ChatFormatting.GRAY), false);
+        }
+
+        HouseExposure exposure = OutcomeSettler.exposure();
+        source.sendSuccess(() -> Component.translatable(
+                "tablegames.house.committed",
+                format(exposure.total()),
+                exposure.tableCount()).withStyle(ChatFormatting.GRAY), false);
 
         if (bankroll.status() == HouseBankroll.Status.LOW) {
             source.sendSuccess(() -> Component.translatable("tablegames.house.low")
@@ -189,7 +220,26 @@ public final class HouseCommands {
         return 1;
     }
 
+    /**
+     * Sets the surcharge on buying items back.
+     * <p>
+     * The house's third source of income, after losing bets and shop sales,
+     * and the only one that works on a server with no shop at all. It is also
+     * the only sink this economy has for credits minted at the cashier: every
+     * sale creates them and, without this, nothing but the shop ever removed
+     * any.
+     */
+    private static int spread(CommandSourceStack source, int percent) {
+        EconomyData data = EconomyData.get(source.getServer());
+        data.setSpreadPercent(percent);
+        EconomyEvents.economy().rebuild(source.getServer());
+        source.sendSuccess(() -> percent == CreditValueTable.NO_SPREAD
+                ? Component.translatable("tablegames.house.spread_off")
+                : Component.translatable("tablegames.house.spread_set", percent), true);
+        return 1;
+    }
+
     private static String format(long credits) {
-        return String.format("%,d", credits);
+        return CreditFormat.of(credits);
     }
 }

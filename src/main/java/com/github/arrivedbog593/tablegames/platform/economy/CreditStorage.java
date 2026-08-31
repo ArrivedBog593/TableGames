@@ -19,8 +19,8 @@ import java.util.UUID;
  * Persistent credit balances for every player, plus the house bank.
  * <p>
  * Stored as level data rather than on the player entity. Player NBT rides on
- * an entity that can be killed, replaced or restored from a backup, and
- * balances travelling with it go missing in ways that are impossible to
+ * an entity that can be killed, replaced, or restored from a backup, and
+ * balances traveling with it go missing in ways that are impossible to
  * explain to whoever lost them.
  * <p>
  * Every mutation calls {@link #setDirty()}. Dirty only marks data for
@@ -137,7 +137,7 @@ public final class CreditStorage extends SavedData {
      * Overwrites a balance outright.
      * <p>
      * Only for {@link TransactionRecovery} and operator commands. Ordinary
-     * code must go through deposit and withdraw so the cap and overdraft
+     * code must go through deposit and withdraw, so the cap and overdraft
      * checks apply.
      */
     void setBalance(UUID playerId, long balance) {

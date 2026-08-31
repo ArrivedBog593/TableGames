@@ -22,8 +22,14 @@ public final class TableScreens {
             SCREENS = new LinkedHashMap<>();
 
     static {
-        SCREENS.put("roulette", RouletteScreen::new);
-        SCREENS.put("american_roulette", RouletteScreen::new);
+        // The screen has to be told which game it is drawing. One class
+        // serves both wheels, but they differ in the title and in whether
+        // the layout carries a double zero, and a bare constructor reference
+        // gave it no way to know either.
+        SCREENS.put("roulette",
+                pos -> new RouletteScreen(pos, "roulette", false));
+        SCREENS.put("american_roulette",
+                pos -> new RouletteScreen(pos, "american_roulette", true));
     }
 
     private TableScreens() {

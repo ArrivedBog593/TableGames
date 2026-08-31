@@ -271,4 +271,66 @@ class RouletteSessionTest {
         session.spin();
         assertEquals(european(17), session.result().orElseThrow());
     }
+
+    // --- The maximum is on the position, not on the chip ------------------------
+
+    @Test
+    void chipsOnTheSamePositionAddUpAgainstTheMaximum() {
+        // The bug this replaced: each wager was checked alone, so five chips
+        // of a thousand on one number were five legal bets that together
+        // committed what one illegal bet would have. The maximum protected
+        // nothing from anybody willing to click more.
+        RouletteSession session = sessionLandingOn(european(17), 100_000);
+        Pocket seventeen = european(17);
+
+        for (int i = 0; i < 10; i++) {
+            assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                            new RouletteBet(BetType.STRAIGHT_UP, seventeen, 1_000)))
+                    .accepted(), "chip " + (i + 1) + " should fit under the maximum");
+        }
+        // Ten thousand is the maximum exactly; the eleventh chip goes over.
+        assertFalse(session.submit(ALICE, new RouletteAction.Place(
+                        new RouletteBet(BetType.STRAIGHT_UP, seventeen, 1)))
+                .accepted());
+    }
+
+    @Test
+    void differentPositionsHaveTheirOwnMaximum() {
+        RouletteSession session = sessionLandingOn(european(17), 100_000);
+        assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                new RouletteBet(BetType.STRAIGHT_UP, european(17), 10_000))).accepted());
+        // A different number is a different stake, so it starts from zero.
+        assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                new RouletteBet(BetType.STRAIGHT_UP, european(23), 10_000))).accepted());
+        // And so is a different bet type on the same felt.
+        assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                new RouletteBet(BetType.RED, null, 10_000))).accepted());
+    }
+
+    @Test
+    void oneSeatFillingAPositionDoesNotBlockAnother() {
+        // The engine's cap is per seat: it mirrors what one player may risk.
+        // Protecting the bankroll from the whole table's exposure is the
+        // platform's job because only it knows the bankroll.
+        RouletteSession session = sessionLandingOn(european(17), 100_000, 100_000);
+        Pocket seventeen = european(17);
+        assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                new RouletteBet(BetType.STRAIGHT_UP, seventeen, 10_000))).accepted());
+        assertTrue(session.submit(BOB, new RouletteAction.Place(
+                new RouletteBet(BetType.STRAIGHT_UP, seventeen, 10_000))).accepted());
+    }
+
+    @Test
+    void clearingBetsFreesThePositionAgain() {
+        RouletteSession session = sessionLandingOn(european(17), 100_000);
+        Pocket seventeen = european(17);
+        session.submit(ALICE, new RouletteAction.Place(
+                new RouletteBet(BetType.STRAIGHT_UP, seventeen, 10_000)));
+        assertFalse(session.submit(ALICE, new RouletteAction.Place(
+                new RouletteBet(BetType.STRAIGHT_UP, seventeen, 10))).accepted());
+
+        session.submit(ALICE, new RouletteAction.ClearBets());
+        assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                new RouletteBet(BetType.STRAIGHT_UP, seventeen, 10_000))).accepted());
+    }
 }

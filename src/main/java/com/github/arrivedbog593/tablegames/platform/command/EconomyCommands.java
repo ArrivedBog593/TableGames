@@ -4,10 +4,10 @@ import com.github.arrivedbog593.tablegames.engine.economy.EconomyIssue;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyEvents;
 import com.github.arrivedbog593.tablegames.platform.economy.ItemIds;
+import com.github.arrivedbog593.tablegames.platform.economy.ShopEntry;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.ChatFormatting;
@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 
 /**
@@ -43,20 +44,32 @@ public final class EconomyCommands {
     }
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("tablegames")
-                .requires(source -> source.hasPermission(2));
+        // The root carries no requirement, and each branch below carries its
+        // own. Brigadier merges same-named roots but keeps the requirement of
+        // whichever was registered first, so one gated root here would have
+        // gated every other class's commands too — including the one branch
+        // that has to work without operator rights.
+        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("tablegames");
 
         root.then(Commands.literal("economy")
+                .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("set")
                         .then(Commands.argument("credits", LongArgumentType.longArg(1))
                                 .executes(context -> setHeld(
                                         context.getSource(),
                                         LongArgumentType.getLong(context, "credits")))))
-                .then(Commands.argument("item", ResourceLocationArgument.id())
-                        .suggests(EconomySuggestions.PRICED_ITEMS)
-                        .executes(context -> remove(
-                                context.getSource(),
-                                ResourceLocationArgument.getId(context, "item").toString())))
+                // Behind a literal, unlike before. A bare argument here meant
+                // any mistyped subcommand was read as an item id, so
+                // "/tablegames economy shop" reported that minecraft:shop had
+                // no conversion value — and a real typo could have quietly
+                // deleted one.
+                .then(Commands.literal("remove")
+                        .then(Commands.argument("item", ResourceLocationArgument.id())
+                                .suggests(EconomySuggestions.PRICED_ITEMS)
+                                .executes(context -> remove(
+                                        context.getSource(),
+                                        ResourceLocationArgument.getId(context, "item")
+                                                .toString()))))
                 .then(Commands.literal("list")
                         .executes(context -> listConversions(context.getSource(), 1))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))
@@ -67,16 +80,29 @@ public final class EconomyCommands {
                         .executes(context -> check(context.getSource()))));
 
         root.then(Commands.literal("shop")
+                .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("add")
                         .then(Commands.argument("price", LongArgumentType.longArg(1))
                                 .executes(context -> addShopHeld(
                                         context.getSource(),
                                         LongArgumentType.getLong(context, "price")))))
-                .then(Commands.argument("item", ResourceLocationArgument.id())
-                        .suggests(EconomySuggestions.SHOP_ITEMS)
-                        .executes(context -> removeShop(
-                                context.getSource(),
-                                ResourceLocationArgument.getId(context, "item").toString())))
+                // By entry id, not by item. Two entries can sell the same item
+                // at different prices now — a plain sword and an enchanted one
+                // — so naming the item no longer says which one to touch.
+                .then(Commands.literal("remove")
+                        .then(Commands.argument("entry", IntegerArgumentType.integer(1))
+                                .suggests(EconomySuggestions.SHOP_ENTRIES)
+                                .executes(context -> removeShop(
+                                        context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "entry")))))
+                .then(Commands.literal("price")
+                        .then(Commands.argument("entry", IntegerArgumentType.integer(1))
+                                .suggests(EconomySuggestions.SHOP_ENTRIES)
+                                .then(Commands.argument("price", LongArgumentType.longArg(1))
+                                        .executes(context -> repriceShop(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "entry"),
+                                                LongArgumentType.getLong(context, "price"))))))
                 .then(Commands.literal("list")
                         .executes(context -> listShop(context.getSource(), 1))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))
@@ -126,8 +152,15 @@ public final class EconomyCommands {
     private static int remove(CommandSourceStack source, String itemId) {
         MinecraftServer server = source.getServer();
         if (EconomyData.get(server).removeConversion(itemId).isEmpty()) {
-            source.sendFailure(Component.translatable(
-                    "tablegames.command.economy.not_listed", ItemIds.displayName(itemId)));
+            // Two different failures wearing the same message until now. An
+            // item priced by a datapack is listed, is convertible, and still
+            // cannot be removed here — saying it is "not listed" sent admins
+            // looking for a bug that was not there.
+            source.sendFailure(EconomyEvents.economy().isFromDatapack(itemId)
+                    ? Component.translatable("tablegames.command.economy.from_datapack",
+                    ItemIds.displayName(itemId))
+                    : Component.translatable("tablegames.command.economy.not_listed",
+                    ItemIds.displayName(itemId)));
             return 0;
         }
         EconomyEvents.economy().rebuild(server);
@@ -182,39 +215,56 @@ public final class EconomyCommands {
             return 0;
         }
 
-        EconomyData.get(source.getServer()).setShopPrice(itemId, price);
+        // The whole held stack, components and all. What the admin is
+        // holding is what buyers receive — an enchanted sword listed here
+        // used to come back out plain, because only its id was ever stored.
+        int number = EconomyData.get(source.getServer()).addShopEntry(held.copy(), price);
         EconomyEvents.economy().rebuild(source.getServer());
 
         source.sendSuccess(() -> Component.translatable(
-                "tablegames.command.shop.added", ItemIds.displayName(itemId), price), true);
+                "tablegames.command.shop.added",
+                held.getHoverName(), price, number), true);
         warnAboutRemaining(source, problems);
         return 1;
     }
 
-    private static int removeShopHeld(CommandSourceStack source) throws CommandSyntaxException {
-        ItemStack held = requireHeld(source);
-        if (held == null) {
-            return 0;
-        }
-        return removeShop(source, ItemIds.idOf(held));
-    }
-
-    private static int removeShop(CommandSourceStack source, String itemId) {
-        if (EconomyData.get(source.getServer()).removeShopPrice(itemId).isEmpty()) {
+    private static int removeShop(CommandSourceStack source, int number) {
+        Optional<ShopEntry> removed =
+                EconomyData.get(source.getServer()).removeShopEntry(number);
+        if (removed.isEmpty()) {
             source.sendFailure(Component.translatable(
-                    "tablegames.command.shop.not_listed", ItemIds.displayName(itemId)));
+                    "tablegames.command.shop.no_such_entry", number));
             return 0;
         }
         EconomyEvents.economy().rebuild(source.getServer());
         source.sendSuccess(() -> Component.translatable(
-                "tablegames.command.shop.removed", ItemIds.displayName(itemId)), true);
+                "tablegames.command.shop.removed",
+                removed.get().stack().getHoverName(), number), true);
+        return 1;
+    }
+
+    private static int repriceShop(CommandSourceStack source, int number, long price) {
+        Optional<ShopEntry> updated =
+                EconomyData.get(source.getServer()).repriceShopEntry(number, price);
+        if (updated.isEmpty()) {
+            source.sendFailure(Component.translatable(
+                    "tablegames.command.shop.no_such_entry", number));
+            return 0;
+        }
+        EconomyEvents.economy().rebuild(source.getServer());
+        source.sendSuccess(() -> Component.translatable(
+                "tablegames.command.shop.repriced",
+                updated.get().stack().getHoverName(), price, number), true);
         return 1;
     }
 
     private static int listShop(CommandSourceStack source, int requestedPage) {
-        Map<String, Long> prices = EconomyData.get(source.getServer()).shopPrices();
-        List<Map.Entry<String, Long>> entries = sortedEntries(
-                prices.keySet(), itemId -> prices.getOrDefault(itemId, 0L));
+        // Catalog order, which is what the numbers mean. An admin reads this
+        // list to find the number to type into remove or price, so the
+        // numbers running 1, 2, 3 are worth more here than the prices doing
+        // so. How a player wants the shop itself sorted is their business,
+        // and the shop screen handles that locally.
+        List<ShopEntry> entries = EconomyData.get(source.getServer()).shopEntries();
 
         if (entries.isEmpty()) {
             source.sendSuccess(() -> Component.translatable(
@@ -226,12 +276,22 @@ public final class EconomyCommands {
         source.sendSuccess(() -> Pagination.header(
                 "tablegames.command.shop.title", SHOP_LIST_COMMAND, page, entries.size()), false);
 
-        for (Map.Entry<String, Long> entry : Pagination.slice(entries, page)) {
+        // The number is the position in the whole catalog, not in the page,
+        // so it stays the number the other commands take.
+        int firstOnPage = Pagination.firstIndex(page);
+        List<ShopEntry> slice = Pagination.slice(entries, page);
+        for (int i = 0; i < slice.size(); i++) {
+            ShopEntry entry = slice.get(i);
+            int number = firstOnPage + i + 1;
             source.sendSuccess(() -> Component.translatable(
                             "tablegames.command.shop.entry",
-                            ItemIds.displayName(entry.getKey()),
-                            entry.getValue(),
-                            Component.literal(entry.getKey()).withStyle(ChatFormatting.DARK_GRAY)),
+                            number,
+                            entry.stack().getHoverName(),
+                            entry.price(),
+                            Component.literal(entry.hasComponents()
+                                            ? entry.itemId() + " *"
+                                            : entry.itemId())
+                                    .withStyle(ChatFormatting.DARK_GRAY)),
                     false);
         }
         return entries.size();

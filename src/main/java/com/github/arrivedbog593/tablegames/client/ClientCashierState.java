@@ -5,11 +5,11 @@ import com.github.arrivedbog593.tablegames.platform.network.CashierCatalogPayloa
 import java.util.List;
 
 /**
- * The catalogue the server last sent, for the cashier screen to draw.
+ * The catalog the server last sent, for the cashier screen to draw.
  * <p>
  * Client only, and deliberately a plain holder: it is display data with no
  * authority whatsoever. Editing it locally changes what a player sees and
- * nothing else, because every action is revalidated on the server against the
+ * nothing else because every action is revalidated on the server against the
  * real table.
  */
 public final class ClientCashierState {

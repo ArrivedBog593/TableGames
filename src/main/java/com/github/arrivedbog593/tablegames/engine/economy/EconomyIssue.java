@@ -8,10 +8,10 @@ import java.util.Objects;
  * Something wrong with an economy configuration.
  * <p>
  * Messages are plain English rather than translation keys: these go to the
- * server console for whoever is editing the config, not to players in game.
+ * server console for whoever is editing the config, not to players in-game.
  *
  * @param severity how bad it is
- * @param itemId   the item at fault, for disabling it if configured to
+ * @param itemId   the item at fault for disabling it if configured to
  * @param message  what is wrong and how to fix it
  */
 public record EconomyIssue(Severity severity, String itemId, String message) {

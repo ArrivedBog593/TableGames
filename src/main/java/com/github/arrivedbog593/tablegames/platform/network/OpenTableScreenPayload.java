@@ -8,13 +8,14 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Tells a client to open a table's screen.
  * <p>
  * Game tables do not use menus. A menu exists to move items between
  * containers, and no card game moves items: a poker table has cards, a
- * betting round and a pot, none of which fit in slots. Inheriting from
+ * betting round, and a pot, none of which fit in slots. Inheriting from
  * {@code AbstractContainerScreen} would also nail every game to the width of
  * a nine-column inventory and draw one underneath whether it belongs there or
  * not.
@@ -39,7 +40,7 @@ public record OpenTableScreenPayload(String gameId, BlockPos tablePos)
                     OpenTableScreenPayload::new);
 
     @Override
-    public Type<? extends CustomPacketPayload> type() {
+    public @NotNull Type<? extends CustomPacketPayload> type() {
         return TYPE;
     }
 

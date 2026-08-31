@@ -9,6 +9,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Says a player has stopped watching a table.
@@ -16,6 +17,11 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  * A menu-based screen tells the server when it closes for free. A plain
  * screen does not, so without this the table would keep sending state to
  * somebody who walked away, forever.
+ * <p>
+ * Closing the screen does not give up a seat. It starts an absence clock
+ * instead: there is no way to tell a misclick from an exit, and losing your
+ * chair to a stray Escape is the worst of the two mistakes. Reopening the
+ * table cancels it.
  */
 public record CloseTablePayload(BlockPos tablePos) implements CustomPacketPayload {
 
@@ -28,7 +34,7 @@ public record CloseTablePayload(BlockPos tablePos) implements CustomPacketPayloa
                     CloseTablePayload::new);
 
     @Override
-    public Type<? extends CustomPacketPayload> type() {
+    public @NotNull Type<? extends CustomPacketPayload> type() {
         return TYPE;
     }
 
@@ -37,7 +43,7 @@ public record CloseTablePayload(BlockPos tablePos) implements CustomPacketPayloa
             if (context.player() instanceof ServerPlayer player
                     && player.level().getBlockEntity(payload.tablePos())
                     instanceof TableBlockEntity table) {
-                table.removeViewer(player.getUUID());
+                table.leaveScreen(player.getUUID());
             }
         });
     }

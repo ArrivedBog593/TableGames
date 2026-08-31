@@ -28,11 +28,11 @@ public enum GameState {
     FINISHED,
 
     /** Aborted before completion; every wager must be refunded. */
-    CANCELLED;
+    CANCELED;
 
     /** No further actions are accepted in this state. */
     public boolean isTerminal() {
-        return this == FINISHED || this == CANCELLED;
+        return this == FINISHED || this == CANCELED;
     }
 
 

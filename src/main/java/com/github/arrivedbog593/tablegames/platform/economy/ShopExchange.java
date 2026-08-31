@@ -2,7 +2,7 @@ package com.github.arrivedbog593.tablegames.platform.economy;
 
 import com.github.arrivedbog593.tablegames.engine.economy.TransactionType;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Buying from the casino shop.
@@ -55,23 +55,30 @@ public final class ShopExchange {
      * <p>
      * All or nothing, for the same reason the cashier is: charging for
      * fifteen and delivering ten is worse than refusing and saying why.
-     *
-     * @param unitPrice the shop's price, already looked up and validated
      */
-    public static Result buy(ServerPlayer player, Item item, long count,
-                             long unitPrice, CreditStorage storage) {
+    public static Result buy(ServerPlayer player, ShopEntry entry, long count,
+                             CreditStorage storage) {
+        long unitPrice = entry.price();
         if (count <= 0 || unitPrice <= 0) {
             return Result.failed("tablegames.shop.not_for_sale");
         }
 
         long balance = storage.balanceOf(player.getUUID());
-        long cost = count * unitPrice;
+        long cost;
+        try {
+            cost = Math.multiplyExact(count, unitPrice);
+        } catch (ArithmeticException absurd) {
+            return Result.shortOf("tablegames.shop.cannot_afford",
+                    balance / unitPrice, Long.MAX_VALUE);
+        }
         if (cost > balance) {
             return Result.shortOf("tablegames.shop.cannot_afford", balance / unitPrice, cost);
         }
 
-        long room = Inventories.spaceFor(player, item);
-        if (room < count) {
+        ItemStack prototype = entry.prototype();
+        long delivered = Math.multiplyExact(count, prototype.getCount());
+        long room = Inventories.spaceFor(player, prototype);
+        if (room < delivered) {
             return Result.shortOf("tablegames.shop.no_room_for", room, cost);
         }
 
@@ -82,14 +89,15 @@ public final class ShopExchange {
         // Straight into the bankroll. This is the casino's steady income, and
         // the reason it can survive a night of players getting lucky.
         storage.creditHouse(cost);
-        Inventories.give(player, item, count);
+        Inventories.give(player, prototype, delivered);
 
+        String what = delivered + "x " + entry.itemId()
+                + (entry.hasComponents() ? " (custom)" : "");
         EconomyEvents.record(storage, TransactionType.SHOP_PURCHASE, player.getUUID(),
-                -cost, storage.balanceOf(player.getUUID()),
-                count + "x " + ItemIds.idOf(item));
+                -cost, storage.balanceOf(player.getUUID()), what);
         EconomyEvents.recordHouse(storage, TransactionType.SHOP_PURCHASE, cost,
-                storage.houseBalance(), "sold " + count + "x " + ItemIds.idOf(item));
+                storage.houseBalance(), "sold " + what);
 
-        return Result.ok(count, cost);
+        return Result.ok(delivered, cost);
     }
 }

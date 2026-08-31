@@ -187,7 +187,12 @@ class RecoveryPlanTest {
         for (TransactionType type : TransactionType.values()) {
             boolean touchesItems = type == TransactionType.CONVERT_IN
                     || type == TransactionType.CONVERT_OUT
-                    || type == TransactionType.SHOP_PURCHASE;
+                    || type == TransactionType.SHOP_PURCHASE
+                    // Rides on a CONVERT_OUT: the fee is only owed because an
+                    // item changed hands, and that item reverts with the
+                    // world. Replaying it would charge for a trade that no
+                    // longer happened.
+                    || type == TransactionType.SPREAD;
             assertEquals(!touchesItems, type.isRecoverable(),
                     type + " recoverability does not match whether it moves items");
         }

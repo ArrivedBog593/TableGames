@@ -2,9 +2,12 @@ package com.github.arrivedbog593.tablegames.platform.command;
 
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyEvents;
+import com.github.arrivedbog593.tablegames.platform.economy.ShopEntry;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.SharedSuggestionProvider;
+
+import java.util.List;
 
 /**
  * Tab completion drawn from the economy itself.
@@ -24,9 +27,24 @@ public final class EconomySuggestions {
             (context, builder) -> SharedSuggestionProvider.suggest(
                     EconomyEvents.economy().table().itemIds(), builder);
 
-    /** Items currently listed in the shop. */
-    public static final SuggestionProvider<CommandSourceStack> SHOP_ITEMS =
-            (context, builder) -> SharedSuggestionProvider.suggest(
-                    EconomyData.get(context.getSource().getServer()).shopPrices().keySet(),
-                    builder);
+    /**
+     * Shop entry numbers, with the item each one sells as the hover text.
+     * <p>
+     * A bare integer argument completes to nothing, which left the only way
+     * to remove or reprice an entry being to run {@code shop list} first and
+     * copy a number out of chat.
+     * <p>
+     * The tooltip matters more here than it looks. Numbers are positions, so
+     * they shift whenever something is removed; showing the item beside each
+     * one means nobody has to trust a number they memorized a minute ago.
+     */
+    public static final SuggestionProvider<CommandSourceStack> SHOP_ENTRIES =
+            (context, builder) -> {
+                List<ShopEntry> entries = EconomyData.get(
+                        context.getSource().getServer()).shopEntries();
+                for (int i = 0; i < entries.size(); i++) {
+                    builder.suggest(i + 1, entries.get(i).stack().getHoverName());
+                }
+                return builder.buildFuture();
+            };
 }

@@ -10,7 +10,7 @@ import java.util.UUID;
 /**
  * What to restore after a crash, worked out from the log.
  * <p>
- * Balances live in memory and reach disk only when the world saves, which by
+ * Balances live in memory and reach the disk only when the world saves, which by
  * default is every five minutes. A crash therefore loses every credit
  * movement since the last save. The log, written line by line, still has
  * them.
@@ -51,7 +51,7 @@ public record RecoveryPlan(Map<UUID, Long> deltas,
         return deltas.isEmpty() && houseDelta == 0;
     }
 
-    /** Accounts that would move, house included. */
+    /** Accounts that would move the house included. */
     public int affectedCount() {
         return deltas.size() + (houseDelta == 0 ? 0 : 1);
     }
@@ -98,7 +98,7 @@ public record RecoveryPlan(Map<UUID, Long> deltas,
             }
         }
 
-        // A player whose only movements cancelled out needs no restoring.
+        // A player whose only movements canceled out needs no restoring.
         deltas.entrySet().removeIf(entry -> entry.getValue() == 0);
 
         return new RecoveryPlan(deltas, houseDelta, highest,

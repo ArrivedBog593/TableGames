@@ -18,7 +18,7 @@ import org.jetbrains.annotations.Nullable;
  * <p>
  * Holds no state at all. Deposited items live in a per-player container
  * created with the menu and returned when it closes, so two people using
- * neighbouring cashiers cannot see or take each other's stack, and a server
+ * neighboring cashiers cannot see or take each other's stack, and a server
  * restart cannot strand items inside a block.
  */
 public class CashierBlockEntity extends BlockEntity implements MenuProvider {

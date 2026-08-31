@@ -3,6 +3,7 @@ package com.github.arrivedbog593.tablegames.platform.economy;
 import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.engine.economy.TransactionRecord;
 import com.github.arrivedbog593.tablegames.engine.economy.TransactionType;
+import com.github.arrivedbog593.tablegames.platform.command.AdminCommands;
 import com.github.arrivedbog593.tablegames.platform.command.CreditCommands;
 import com.github.arrivedbog593.tablegames.platform.command.EconomyCommands;
 import com.github.arrivedbog593.tablegames.platform.command.HouseCommands;
@@ -60,7 +61,7 @@ public final class EconomyEvents {
      * Writes a movement to the log and advances the saved sequence in one
      * step.
      * <p>
-     * These two must never drift apart, and this method exists so they
+     * These two must never drift apart, and this method exists, so they
      * cannot. The sequence lives in the same file as the balances, so both
      * reach disk in the same save: any line numbered above it is by
      * definition a movement that did not survive, which is exactly what
@@ -94,6 +95,10 @@ public final class EconomyEvents {
 
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
+        // Belt and braces with the clear on shutdown: a crash never runs the
+        // stop hook, and a stale commitment would silently narrow every
+        // table's limits with nothing left to release it.
+        OutcomeSettler.exposure().clear();
         MinecraftServer server = event.getServer();
         CreditStorage storage = CreditStorage.get(server);
 
@@ -130,10 +135,16 @@ public final class EconomyEvents {
         EconomyCommands.register(event.getDispatcher());
         TableCommands.register(event.getDispatcher());
         HouseCommands.register(event.getDispatcher());
+        AdminCommands.register(event.getDispatcher());
     }
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
+        // Table commitments cannot outlive the rounds that made them, and
+        // rounds are never saved. Left behind, they would shrink every
+        // table's limit in the next world opened in the same process — the
+        // registry is static, so a single-player session carries it across.
+        OutcomeSettler.exposure().clear();
         MinecraftServer server = event.getServer();
         CreditStorage storage = CreditStorage.get(server);
 

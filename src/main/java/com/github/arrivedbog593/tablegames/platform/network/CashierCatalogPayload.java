@@ -26,18 +26,31 @@ import java.util.List;
  * This is public information — it is what the cashier displays — so there is
  * nothing to redact here. Payloads carrying game state will not be so simple.
  *
- * @param entries item id and what one of it is worth, dearest first
+ * @param entries item id and what one of it is worth, dearest-first
  */
 public record CashierCatalogPayload(List<Entry> entries) implements CustomPacketPayload {
 
     public static final Type<CashierCatalogPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(TableGames.MOD_ID, "cashier_catalog"));
 
-    /** One row of the cashier's list. */
-    public record Entry(String itemId, long value) {
+    /**
+     * One convertible item, priced in both directions.
+     * <p>
+     * Two figures rather than one, because the cashier stopped being
+     * symmetrical the moment a buyback surcharge existed. Sending only the
+     * sale value left the screen quoting the price of selling a diamond next
+     * to a button that buys one, which is the single place a wrong number
+     * does the most damage.
+     *
+     * @param itemId  what is being priced
+     * @param value   credits paid for handing one in
+     * @param buyback credits charged for taking one out, surcharge included
+     */
+    public record Entry(String itemId, long value, long buyback) {
         public static final StreamCodec<ByteBuf, Entry> STREAM_CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, Entry::itemId,
                 ByteBufCodecs.VAR_LONG, Entry::value,
+                ByteBufCodecs.VAR_LONG, Entry::buyback,
                 Entry::new);
     }
 
@@ -56,7 +69,8 @@ public record CashierCatalogPayload(List<Entry> entries) implements CustomPacket
         List<Entry> entries = new ArrayList<>();
         var table = EconomyEvents.economy().table();
         for (String itemId : table.itemIds()) {
-            table.valueOf(itemId).ifPresent(value -> entries.add(new Entry(itemId, value)));
+            table.valueOf(itemId).ifPresent(value ->
+                    entries.add(new Entry(itemId, value, table.buybackUnit(itemId))));
         }
         entries.sort(Comparator
                 .comparingLong(Entry::value).reversed()

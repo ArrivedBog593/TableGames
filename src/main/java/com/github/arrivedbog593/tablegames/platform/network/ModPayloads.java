@@ -13,10 +13,10 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
  * shape changes, so an out-of-date client is refused at login rather than
  * silently misreading packets halfway through a hand.
  */
-@EventBusSubscriber(modid = TableGames.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = TableGames.MOD_ID)
 public final class ModPayloads {
 
-    private static final String VERSION = "1";
+    private static final String VERSION = "3";
 
     private ModPayloads() {
     }
@@ -49,6 +49,16 @@ public final class ModPayloads {
                 RouletteActionPayload.TYPE,
                 RouletteActionPayload.STREAM_CODEC,
                 RouletteActionPayload::handleOnServer);
+
+        registrar.playToServer(
+                AdminShopActionPayload.TYPE,
+                AdminShopActionPayload.STREAM_CODEC,
+                AdminShopActionPayload::handleOnServer);
+
+        registrar.playToServer(
+                TableActionPayload.TYPE,
+                TableActionPayload.STREAM_CODEC,
+                TableActionPayload::handleOnServer);
 
         registrar.playToServer(
                 CloseTablePayload.TYPE,

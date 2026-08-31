@@ -294,6 +294,6 @@ public abstract class GameSession {
         }
         this.outcome = new Outcome(refunds, List.of(), 0, reasonKey);
         clearTurn();
-        setState(GameState.CANCELLED);
+        setState(GameState.CANCELED);
     }
 }

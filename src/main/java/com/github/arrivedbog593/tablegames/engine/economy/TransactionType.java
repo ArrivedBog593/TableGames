@@ -44,7 +44,16 @@ public enum TransactionType {
     CONVERT_OUT(false),
 
     /** A shop purchase delivered an item. */
-    SHOP_PURCHASE(false);
+    SHOP_PURCHASE(false),
+
+    /**
+     * The house's cut of a buyback.
+     * <p>
+     * Not recoverable, and for the same reason as the conversion it rides on:
+     * the item handed over reverts with the world on a rollback, so replaying
+     * the fee would charge for a trade that no longer happened.
+     */
+    SPREAD(false);
 
     private final boolean recoverable;
 

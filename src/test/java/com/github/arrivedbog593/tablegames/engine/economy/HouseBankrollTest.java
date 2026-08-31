@@ -85,7 +85,7 @@ class HouseBankrollTest {
     }
 
     @Test
-    void canCoverIsTheLastLineOfDefence() {
+    void canCoverIsTheLastLineOfDefense() {
         HouseBankroll bankroll = HouseBankroll.of(1_000);
         assertTrue(bankroll.canCover(1_000));
         assertFalse(bankroll.canCover(1_001),

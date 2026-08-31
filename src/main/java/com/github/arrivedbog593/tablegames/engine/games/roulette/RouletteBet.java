@@ -51,4 +51,16 @@ public record RouletteBet(BetType type, Pocket target, long amount) {
     public long payout(Pocket result) {
         return wins(result) ? amount + amount * type.payoutRatio() : 0;
     }
+
+    /**
+     * What the house owes on this bet if the ball lands in {@code result}:
+     * positive when it pays out, negative when it keeps the stake.
+     * <p>
+     * The profit only, not the returned stake. Credits do not move when a bet
+     * is placed, so the stake never left the player, and the house is only ever
+     * on the hook for the winnings.
+     */
+    public long houseCost(Pocket result) {
+        return wins(result) ? amount * type.payoutRatio() : -amount;
+    }
 }

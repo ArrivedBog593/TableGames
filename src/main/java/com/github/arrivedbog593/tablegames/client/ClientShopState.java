@@ -5,7 +5,7 @@ import com.github.arrivedbog593.tablegames.platform.network.ShopCatalogPayload;
 import java.util.List;
 
 /**
- * The shop catalogue the server last sent, for the screen to draw.
+ * The shop catalog the server last sent, for the screen to draw.
  * <p>
  * Client only, and deliberately a plain holder: it is display data with no
  * authority. Editing it locally changes what a player sees and nothing else,

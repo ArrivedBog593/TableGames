@@ -15,7 +15,7 @@ import java.util.UUID;
 /**
  * Restores credit balances lost to a crash.
  * <p>
- * Balances live in memory and reach disk only when the world saves, every
+ * Balances live in memory and reach the disk only when the world saves, every
  * five minutes by default. A crash loses everything since then. The
  * transaction log, flushed line by line, still has it.
  * <p>
@@ -24,7 +24,7 @@ import java.util.UUID;
  * <p>
  * Reports what it found at every branch, including the boring ones. Silence
  * from a recovery routine is indistinguishable from a recovery routine that
- * never ran, and telling those apart afterwards is impossible.
+ * never ran, and telling those apart afterward is impossible.
  */
 public final class TransactionRecovery {
 

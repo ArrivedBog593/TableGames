@@ -4,7 +4,6 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
-import net.minecraft.network.chat.MutableComponent;
 
 import java.util.List;
 
@@ -33,9 +32,20 @@ public final class Pagination {
         return Math.clamp(requested, 1, pageCount(totalEntries));
     }
 
+    /**
+     * Where a page starts in the full list, zero-based.
+     * <p>
+     * For lists whose entries are numbered by position: the number shown
+     * beside the third row of page two is not three, and working that out at
+     * each call site is how one of them ends up wrong.
+     */
+    public static int firstIndex(int page) {
+        return (page - 1) * PAGE_SIZE;
+    }
+
     /** The entries belonging on a page, or an empty list if past the end. */
     public static <T> List<T> slice(List<T> entries, int page) {
-        int from = (page - 1) * PAGE_SIZE;
+        int from = firstIndex(page);
         if (from >= entries.size()) {
             return List.of();
         }
@@ -53,7 +63,7 @@ public final class Pagination {
     public static Component header(String titleKey, String baseCommand,
                                    int page, int totalEntries) {
         int pages = pageCount(totalEntries);
-        MutableComponent line = Component.literal("")
+        return Component.literal("")
                 .append(arrow("<<<", baseCommand, page - 1, page > 1))
                 .append(Component.literal(" "))
                 .append(Component.translatable(titleKey).withStyle(ChatFormatting.GOLD))
@@ -62,7 +72,6 @@ public final class Pagination {
                         .withStyle(ChatFormatting.GRAY))
                 .append(Component.literal(" "))
                 .append(arrow(">>>", baseCommand, page + 1, page < pages));
-        return line;
     }
 
     private static Component arrow(String label, String baseCommand, int target, boolean enabled) {

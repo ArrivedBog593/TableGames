@@ -4,6 +4,7 @@ import com.github.arrivedbog593.tablegames.engine.economy.TransactionRecord;
 import com.github.arrivedbog593.tablegames.engine.economy.TransactionType;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.storage.LevelResource;
 import org.slf4j.Logger;
 
 import java.io.BufferedWriter;
@@ -34,9 +35,10 @@ import java.util.zip.GZIPOutputStream;
  * The active file covers the current run only. On startup the previous run's
  * file is read for recovery, then gzipped into a subdirectory, so the live
  * file never grows without bound no matter how long the server has been up.
- * Archives use their own name and folder to stay clear of vanilla's
- * {@code latest.log} rotation, which writes {@code YYYY-MM-DD-N.log.gz}
- * straight into {@code logs/}.
+ * <p>
+ * Everything lives under {@code <world>/logs/}, alongside the balances it
+ * describes, rather than under the game folder. See
+ * {@link #logDirectoryOf(MinecraftServer)} for why that matters.
  * <p>
  * Server thread only.
  */
@@ -69,9 +71,23 @@ public final class TransactionLog {
 
     // --- Lifecycle -----------------------------------------------------------
 
+    /**
+     * The log directory for this world.
+     * <p>
+     * Inside the world folder, not the game folder. Balances are level data
+     * and therefore per world; a log outside the world would be shared by
+     * every world the same installation opens, and startup recovery would
+     * replay one world's pending movements into another's balances. It also
+     * means the log travels with a world backup, which is exactly when
+     * somebody wants to read it.
+     */
+    private static Path logDirectoryOf(MinecraftServer server) {
+        return server.getWorldPath(LevelResource.ROOT).resolve("logs");
+    }
+
     /** Where the previous run left its log, whether or not it exists. */
     public static Path activeFileOf(MinecraftServer server) {
-        return server.getServerDirectory().resolve("logs").resolve(ACTIVE_NAME);
+        return logDirectoryOf(server).resolve(ACTIVE_NAME);
     }
 
     /**
@@ -84,7 +100,7 @@ public final class TransactionLog {
      *                         keep climbing across restarts
      */
     public static TransactionLog open(MinecraftServer server, long startingSequence) {
-        Path logs = server.getServerDirectory().resolve("logs");
+        Path logs = logDirectoryOf(server);
         Path archives = logs.resolve(ARCHIVE_DIRECTORY);
         TransactionLog log = new TransactionLog(logs.resolve(ACTIVE_NAME), archives, startingSequence);
         try {

@@ -15,6 +15,7 @@ public final class ModCreativeTabs {
     public static final DeferredRegister<CreativeModeTab> TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, TableGames.MOD_ID);
 
+    @SuppressWarnings("unused")
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> MAIN =
             TABS.register("main", () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.tablegames"))
@@ -23,6 +24,10 @@ public final class ModCreativeTabs {
                         output.accept(ModItems.TABLE.get());
                         output.accept(ModItems.CASHIER.get());
                         output.accept(ModItems.SHOP.get());
+                        // Unbound, so it works for operators and nobody else.
+                        // Anyone administering without operator rights gets a
+                        // bound one from the command instead.
+                        output.accept(ModItems.ADMIN_KEY.get());
                     })
                     .build());
 

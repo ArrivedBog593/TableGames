@@ -13,14 +13,14 @@ import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
- * Blocks the mod adds.
+ * The blocks the mod adds.
  * <p>
  * Tables are one block for every game, since a table's game lives in its
  * block entity. The cashier and the shop are separate because neither is a
- * game: they have no players, no turns and no outcome.
+ * game: they have no players, no turns, and no outcome.
  * <p>
- * The cashier and the shop are also separate from each other, and
- * deliberately so. The cashier is symmetric — items in, the same items back
+ * The cashier and the shop are also separate from each other and
+ * deliberate so. The cashier is symmetric — items in, the same items back
  * out at the same rate. The shop only takes credits. Merging them into one
  * counter would hide that difference, and it is the difference that keeps the
  * economy stable.
@@ -31,7 +31,7 @@ public final class ModBlocks {
             DeferredRegister.createBlocks(TableGames.MOD_ID);
 
     /**
-     * The one table block, configured after placement.
+     * The one-table block, configured after placement.
      * <p>
      * Not flammable despite being wooden: a casino floor burning down because
      * somebody brought a flint and steel is a support ticket nobody wants.
@@ -55,7 +55,7 @@ public final class ModBlocks {
                     .sound(SoundType.METAL)
                     .requiresCorrectToolForDrops());
 
-    /** Sells goods for credits, and never buys them back. */
+    /** Sells goods for credits and never buys them back. */
     public static final DeferredBlock<ShopBlock> SHOP = BLOCKS.registerBlock(
             "shop",
             ShopBlock::new,

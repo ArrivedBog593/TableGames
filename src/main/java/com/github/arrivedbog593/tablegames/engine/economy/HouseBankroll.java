@@ -9,13 +9,13 @@ package com.github.arrivedbog593.tablegames.engine.economy;
  * <p>
  * The table maximum is derived from the balance rather than configured
  * separately, because a fixed maximum is wrong the moment the balance moves.
- * With a million in the bank and a ten thousand maximum, one straight-up win
+ * With a million in the bank and a ten-thousand maximum, one straight-up win
  * at 35 to 1 takes 360,000 — over a third of the casino — and that is not a
  * risk, it is a certainty waiting its turn. Deriving the limit means a
  * casino that is losing quietly tightens its own bets until it recovers, with
  * nobody having to notice.
  *
- * @param balance         credits the house holds
+ * @param balance         credits the households
  * @param exposurePercent most of the bankroll a single payout may claim
  * @param minimumReserve  below this, house-banked games close entirely
  */
@@ -95,7 +95,7 @@ public record HouseBankroll(long balance, int exposurePercent, long minimumReser
     /**
      * Whether the house could actually pay this out.
      * <p>
-     * The last line of defence, checked before settling rather than before
+     * The last line of defense, checked before settling rather than before
      * betting. Paying from a balance that cannot cover it would create
      * credits from nothing, which is the one failure this whole system exists
      * to prevent.

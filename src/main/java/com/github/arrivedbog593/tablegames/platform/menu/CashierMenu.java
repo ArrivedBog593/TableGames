@@ -27,7 +27,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Optional;
 
 /**
- * The cashier's menu: a deposit tray, a balance, and a catalogue to buy back
+ * The cashier's menu: a deposit tray, a balance, and a catalog to buy back
  * from.
  * <p>
  * Every action is validated on the server. The screen only draws and sends
@@ -36,7 +36,7 @@ import java.util.Optional;
  * <p>
  * The deposit tray belongs to the menu, not the block. It is created when the
  * menu opens and emptied back into the player when it closes, so two people
- * at neighbouring cashiers cannot reach each other's items and a restart
+ * at neighboring cashiers cannot reach each other's items, and a restart
  * cannot strand anything inside a block.
  * <p>
  * Data slots are written on the server only. Both sides run this class, and
@@ -53,7 +53,7 @@ public class CashierMenu extends AbstractContainerMenu {
     /** Button id: convert everything in the tray. */
     public static final int BUTTON_CONVERT = 0;
 
-    /** Button ids at or above this redeem one of catalogue entry (id - base). */
+    /** Button ids at or above this redeem one of the catalog entries (id - base). */
     public static final int BUTTON_REDEEM_ONE = 1000;
 
     /** Button ids at or above this redeem a full stack of entry (id - base). */
@@ -71,7 +71,7 @@ public class CashierMenu extends AbstractContainerMenu {
     private final Player player;
 
     /**
-     * Balance is a long but data slots carry ints, so it travels in halves.
+     * Balance is long but data slots carry ints, so it travels in halves.
      * Casino balances legitimately pass two billion, and a silently truncated
      * balance is a support ticket nobody can explain.
      */
@@ -234,7 +234,7 @@ public class CashierMenu extends AbstractContainerMenu {
         return true;
     }
 
-    /** Buys back one, or a stack, of a catalogue entry. */
+    /** Buys back one, or a stack, of a catalog entry. */
     private boolean redeem(ServerPlayer who, CreditStorage storage,
                            int entryIndex, boolean wholeStack) {
         var catalog = CashierCatalogPayload.current().entries();
@@ -301,7 +301,7 @@ public class CashierMenu extends AbstractContainerMenu {
     @Override
     public void removed(@NotNull Player who) {
         super.removed(who);
-        // Never swallow the tray. Anything left goes back to the player, or on
+        // Never swallow the tray. Anything left goes back to the player or on
         // the floor if they have no room.
         clearContainer(who, deposit);
     }

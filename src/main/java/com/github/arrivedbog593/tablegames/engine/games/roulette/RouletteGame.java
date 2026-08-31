@@ -19,8 +19,20 @@ import java.util.random.RandomGenerator;
 public final class RouletteGame implements Game {
 
     private static final int MAX_SEATS = 8;
-    private static final long DEFAULT_MINIMUM_BET = 10;
-    private static final long DEFAULT_MAXIMUM_BET = 10_000;
+    private static final long DEFAULT_MINIMUM_BET = BetLimits.DEFAULT_MINIMUM;
+
+    /**
+     * No ceiling of the game's own.
+     * <p>
+     * This used to be a flat ten thousand, which nobody chose for any reason
+     * and which quietly overrode the limit derived from the bankroll — a
+     * house with a hundred million could afford a hundred and thirty-eight
+     * thousand on a single number and would still refuse anything over ten.
+     * A game does not know how much the house has, so it is in no position to
+     * set the number: the bankroll caps what can be paid, and a table's own
+     * {@link BetLimits} caps what that table chooses to take.
+     */
+    private static final long DEFAULT_MAXIMUM_BET = Long.MAX_VALUE;
 
     private final String id;
     private final RouletteWheel wheel;

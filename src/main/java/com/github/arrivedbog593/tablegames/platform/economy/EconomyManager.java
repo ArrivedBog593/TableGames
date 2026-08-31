@@ -63,11 +63,15 @@ public final class EconomyManager {
 
         List<EconomyIssue> found = new ArrayList<>(
                 EconomyValidator.validate(candidate, recipes));
-        found.addAll(EconomyValidator.validateShop(candidate, data.shopPrices()));
+        found.addAll(EconomyValidator.validateShop(candidate, data.lowestShopPrices()));
         this.issues = List.copyOf(found);
 
+        // The spread is applied last, to whichever table survives validation.
+        // Validation only ever compares values against recipes, and a
+        // surcharge on buying back cannot open a loop it would catch — it can
+        // only make one less profitable.
         if (!EconomyValidator.hasErrors(issues) || policy == LoopPolicy.WARN_ONLY) {
-            this.liveTable = candidate;
+            this.liveTable = candidate.withSpread(data.spreadPercent());
         } else {
             List<String> exploitable = EconomyValidator.exploitableItems(issues);
             CreditValueTable.Builder builder = CreditValueTable.builder();
@@ -76,7 +80,7 @@ public final class EconomyManager {
                     candidate.valueOf(itemId).ifPresent(value -> builder.put(itemId, value));
                 }
             }
-            this.liveTable = builder.build();
+            this.liveTable = builder.build().withSpread(data.spreadPercent());
             LOGGER.error("[Economy] Disabled {} exploitable item(s): {}",
                     exploitable.size(), String.join(", ", exploitable));
         }
@@ -118,13 +122,27 @@ public final class EconomyManager {
         List<EconomyIssue> found = new ArrayList<>(EconomyValidator.validate(
                 candidate, RecipeScanner.scan(server, candidate)));
         found.addAll(EconomyValidator.validateShop(
-                candidate, EconomyData.get(server).shopPrices()));
+                candidate, EconomyData.get(server).lowestShopPrices()));
         return List.copyOf(found);
     }
 
     /** Checks a proposed shop price against current conversion values. */
     public List<EconomyIssue> previewShopPrice(String itemId, long price) {
         return EconomyValidator.validateShop(liveTable, Map.of(itemId, price));
+    }
+
+    /**
+     * Whether a value comes from a datapack rather than from a command.
+     * <p>
+     * The two sources look identical in the live table but behave nothing
+     * alike: a datapack value cannot be removed at runtime because the next
+     * reload would simply put it back. Telling a player their diamond "is not
+     * listed" when it plainly is, because the command could not remove it, is
+     * the kind of message that sends somebody hunting for a bug that is not
+     * there.
+     */
+    public boolean isFromDatapack(String itemId) {
+        return loader.table().contains(itemId);
     }
 
     public CreditValueTable table() {

@@ -100,7 +100,12 @@ public final class RouletteSession extends GameSession {
         if (bet.amount() < minimumBet) {
             return ActionResult.rejected("tablegames.reject.below_minimum_bet");
         }
-        if (bet.amount() > maximumBet) {
+        // The limit is on the position, not on the chip. Checking one wager
+        // at a time made the maximum meaningless: five chips of a thousand on
+        // the same number are five legal bets that together commit what one
+        // illegal bet would have. What the house has to be able to pay is the
+        // total riding on a pocket, so that is what gets measured.
+        if (stakedOn(seat.playerId(), bet) + bet.amount() > maximumBet) {
             return ActionResult.rejected("tablegames.reject.above_maximum_bet");
         }
         if (bet.type().requiresTarget() && !wheel.pockets().contains(bet.target())) {
@@ -114,6 +119,23 @@ public final class RouletteSession extends GameSession {
         bets.computeIfAbsent(seat.playerId(), key -> new ArrayList<>()).add(bet);
         doneBetting.remove(seat.playerId());
         return ActionResult.ok();
+    }
+
+    /**
+     * What this seat already has riding on the same position.
+     * <p>
+     * The same position means the same bet type and the same target: two chips on red are
+     * one stake, a chip on red and one on 17 are two.
+     */
+    private long stakedOn(java.util.UUID playerId, RouletteBet bet) {
+        long total = 0;
+        for (RouletteBet placed : bets.getOrDefault(playerId, List.of())) {
+            if (placed.type() == bet.type()
+                    && java.util.Objects.equals(placed.target(), bet.target())) {
+                total += placed.amount();
+            }
+        }
+        return total;
     }
 
     private ActionResult clearBets(Seat seat) {

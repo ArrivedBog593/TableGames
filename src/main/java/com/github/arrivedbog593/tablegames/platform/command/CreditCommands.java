@@ -26,7 +26,7 @@ import java.util.Optional;
  * <p>
  * These exist so the economy can be exercised before any table block or GUI
  * is written. The cashier GUI will call the same {@link CreditExchange}
- * methods, so behaviour stays identical whichever way a player uses it.
+ * methods, so the behavior stays identical whichever way a player uses it.
  * <p>
  * Item ids use {@link ResourceLocationArgument} rather than a string
  * argument. Brigadier's unquoted strings do not allow a colon, so

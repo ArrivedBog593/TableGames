@@ -1,6 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.registry;
 
 import com.github.arrivedbog593.tablegames.TableGames;
+import com.github.arrivedbog593.tablegames.platform.menu.AdminShopMenu;
 import com.github.arrivedbog593.tablegames.platform.menu.CashierMenu;
 import com.github.arrivedbog593.tablegames.platform.menu.ShopMenu;
 import net.minecraft.core.registries.Registries;
@@ -32,6 +33,14 @@ public final class ModMenus {
 
     public static final DeferredHolder<MenuType<?>, MenuType<ShopMenu>> SHOP =
             MENUS.register("shop", () -> IMenuTypeExtension.create(ShopMenu::new));
+
+    /**
+     * Configuring the shop. A menu because listing something means putting the
+     * stack in a slot, which is the only way to describe an item that carries
+     * enchantments.
+     */
+    public static final DeferredHolder<MenuType<?>, MenuType<AdminShopMenu>> ADMIN_SHOP =
+            MENUS.register("admin_shop", () -> IMenuTypeExtension.create(AdminShopMenu::new));
 
     private ModMenus() {
     }

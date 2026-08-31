@@ -15,15 +15,16 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Something a player asks to do at a roulette table.
  * <p>
  * Everything here is a request. The table checks the table maximum, the house
- * bankroll and the player's balance before accepting anything, because a
+ * bankroll, and the player's balance before accepting anything, because a
  * client can send whatever it likes and will eventually try to.
  *
- * @param kind         0 place, 1 clear, 2 spin now
+ * @param kind         0 places, 1 clear
  * @param tablePos     which table; verified against reach before use
  * @param betType      ordinal of the {@link BetType}, for a placement
  * @param targetNumber the pocket for a straight-up bet
@@ -36,7 +37,6 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
 
     public static final int KIND_PLACE = 0;
     public static final int KIND_CLEAR = 1;
-    public static final int KIND_SPIN = 2;
 
     /**
      * How far a player may be from a table and still act on it. Generous
@@ -58,7 +58,7 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
                     RouletteActionPayload::new);
 
     @Override
-    public Type<? extends CustomPacketPayload> type() {
+    public @NotNull Type<? extends CustomPacketPayload> type() {
         return TYPE;
     }
 
@@ -71,10 +71,6 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
 
     public static RouletteActionPayload clear(BlockPos pos) {
         return new RouletteActionPayload(KIND_CLEAR, pos, 0, 0, false, 0);
-    }
-
-    public static RouletteActionPayload spin(BlockPos pos) {
-        return new RouletteActionPayload(KIND_SPIN, pos, 0, 0, false, 0);
     }
 
     /** Applied on the server, with every claim in it treated as a claim. */
@@ -90,15 +86,37 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
                     instanceof TableBlockEntity table)) {
                 return;
             }
+            // Only players who actually opened this table act on it. Both
+            // branches below also require a seat, but failing here first
+            // keeps a client from probing tables it never looked at.
+            if (!table.isPresent(player.getUUID())) {
+                return;
+            }
 
             switch (payload.kind()) {
-                case KIND_CLEAR -> table.clearBets(player.getUUID());
-                case KIND_SPIN -> table.callSpin();
+                case KIND_CLEAR -> clear(player, table);
                 case KIND_PLACE -> place(payload, player, table);
                 default -> {
                 }
             }
         });
+    }
+
+    /**
+     * Takes a player's chips back off the layout.
+     * <p>
+     * Refused once betting closes, which used to be checked nowhere at all.
+     * Withdrawing during the lockout is the same hole as standing up during
+     * it: a way to pull a stake out of a round that is about to resolve.
+     */
+    private static void clear(ServerPlayer player, TableBlockEntity table) {
+        if (!table.isSeated(player.getUUID())) {
+            return;
+        }
+        if (!table.clearBets(player.getUUID()) && !table.isBettingOpen()) {
+            player.displayClientMessage(
+                    Component.translatable("tablegames.roulette.betting_closed"), true);
+        }
     }
 
     private static void place(RouletteActionPayload payload, ServerPlayer player,
@@ -123,13 +141,13 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
             return;
         }
 
-        String refusal = table.placeBet(player, bet);
+        Component refusal = table.placeBet(player, bet);
         if (refusal != null) {
-            player.displayClientMessage(Component.translatable(refusal), true);
+            player.displayClientMessage(refusal, true);
         }
     }
 
-    /** Rebuilds the named pocket, with the colour the wheel actually gives it. */
+    /** Rebuilds the named pocket, with the color the wheel actually gives it. */
     private static Pocket pocketOf(RouletteActionPayload payload) {
         int number = Math.clamp(payload.targetNumber(), 0, 36);
         if (number == 0) {

@@ -183,9 +183,9 @@ class GameSessionTest {
     void cancellingRefundsEveryWager() {
         TestSession session = newSession();
         session.begin();
-        session.cancel("tablegames.summary.cancelled");
+        session.cancel("tablegames.summary.canceled");
 
-        assertEquals(GameState.CANCELLED, session.state());
+        assertEquals(GameState.CANCELED, session.state());
         assertEquals(0, session.pot());
         for (Seat seat : session.seats()) {
             assertEquals(100, seat.credits(), "everyone should be made whole");

@@ -22,11 +22,12 @@ import net.neoforged.fml.common.Mod;
 public final class TableGames {
 
     /**
-     * Registry namespace and assets folder. Changing this breaks saved worlds
+     * Registry namespace and assets folder. Changing these breaks saved worlds
      * and every datapack written against the mod.
      */
     public static final String MOD_ID = "tablegames";
 
+    @SuppressWarnings("unused")
     public TableGames(IEventBus modEventBus, ModContainer container) {
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);

@@ -19,8 +19,8 @@ import java.util.UUID;
  * <p>
  * Two rules do the work:
  * <ul>
- *   <li>A player-versus-player hand must be exactly zero sum. Chips only
- *       change owner; the house takes the declared rake and not one credit
+ *   <li>A player-versus-player hand must be exactly zero-sum. Chips only
+ *       change the owner; the house takes the declared rake and not one credit
  *       more. Anything else means value appeared or vanished.</li>
  *   <li>A house-banked hand may pay out, but only what the bankroll actually
  *       holds. Paying from a balance that cannot cover it is the same
@@ -39,7 +39,7 @@ public final class SettlementAudit {
      *
      * @param approved   whether credits may move
      * @param reasonKey  translation key explaining a refusal, null when approved
-     * @param houseDelta what the house gains, or loses when negative
+     * @param houseDelta what the house gains or loses when negative
      * @param shortfall  credits the house was short, zero unless that was the reason
      */
     public record Verdict(boolean approved, String reasonKey, long houseDelta, long shortfall) {
@@ -76,7 +76,7 @@ public final class SettlementAudit {
         Set<UUID> paid = new HashSet<>();
         for (Payout payout : outcome.payouts()) {
             if (!paid.add(payout.playerId())) {
-                // Two entries for one player would apply twice, or silently
+                // Two entries for one player would apply twice or silently
                 // drop one depending on how the settler iterates.
                 return Verdict.reject("tablegames.settle.duplicate_payout");
             }
