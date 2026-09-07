@@ -5,6 +5,7 @@ import com.github.arrivedbog593.tablegames.platform.economy.CreditExchange;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyEvents;
 import com.github.arrivedbog593.tablegames.platform.economy.ItemIds;
+import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -65,6 +66,18 @@ public final class CreditCommands {
                                         ResourceLocationArgument.getId(context, "item").toString(),
                                         LongArgumentType.getLong(context, "count"))))));
 
+        // Under the mod's own tree rather than a bare /pay. This runs on
+        // Arclight beside Bukkit plugins, and Essentials has owned /pay on
+        // servers like this one for a decade; taking the name would decide
+        // that fight silently and in the wrong direction.
+        root.then(Commands.literal("pay")
+                .then(Commands.argument("target", EntityArgument.player())
+                        .then(Commands.argument("amount", LongArgumentType.longArg(1))
+                                .executes(context -> pay(
+                                        context.getSource(),
+                                        EntityArgument.getPlayer(context, "target"),
+                                        LongArgumentType.getLong(context, "amount"))))));
+
         root.then(Commands.literal("house")
                 .requires(source -> source.hasPermission(2))
                 .executes(context -> showHouse(context.getSource())));
@@ -103,6 +116,63 @@ public final class CreditCommands {
         source.sendSuccess(() -> Component.translatable(
                 "tablegames.command.credits.house", balance), false);
         return (int) Math.min(Integer.MAX_VALUE, balance);
+    }
+
+    /**
+     * Moves credits from one player to another.
+     * <p>
+     * The only movement in the mod that a player starts and that has a second
+     * player on the far side, which is what makes it worth being careful
+     * about. It spends against what is free rather than against the balance:
+     * without that, paying an alt during the lockout would cancel a wager
+     * exactly the way buying an item used to.
+     * <p>
+     * Two log lines, not one. A record carries a single owner, so a transfer
+     * is a withdrawal on one balance and a deposit on the other, each naming
+     * the other party. Both are recoverable, and replaying them lands on the
+     * same two balances because each line carries the balance it produced.
+     */
+    private static int pay(CommandSourceStack source, ServerPlayer target, long amount)
+            throws CommandSyntaxException {
+        ServerPlayer sender = source.getPlayerOrException();
+        if (sender.getUUID().equals(target.getUUID())) {
+            source.sendFailure(Component.translatable("tablegames.command.credits.pay_self"));
+            return 0;
+        }
+
+        CreditStorage storage = CreditStorage.get(source.getServer());
+        long balance = storage.balanceOf(sender.getUUID());
+        long spendable = OutcomeSettler.stakes().spendable(sender.getUUID(), balance);
+        if (amount > spendable) {
+            // Two different problems, as in the shop: being short is the
+            // player's own business, being short only because of a live
+            // wager is something they cannot see from the balance.
+            source.sendFailure(Component.translatable(amount <= balance
+                    ? "tablegames.command.credits.pay_committed"
+                    : "tablegames.command.credits.pay_short", spendable));
+            return 0;
+        }
+
+        // One call, so a deposit that would break the receiver's cap, leaves
+        // both balances untouched rather than taking from one and failing on
+        // the other.
+        if (!storage.transfer(sender.getUUID(), target.getUUID(), amount)) {
+            source.sendFailure(Component.translatable("tablegames.exchange.cap_reached"));
+            return 0;
+        }
+
+        EconomyEvents.record(storage, TransactionType.TRANSFER, sender.getUUID(),
+                -amount, storage.balanceOf(sender.getUUID()),
+                "to " + target.getGameProfile().getName());
+        EconomyEvents.record(storage, TransactionType.TRANSFER, target.getUUID(),
+                amount, storage.balanceOf(target.getUUID()),
+                "from " + sender.getGameProfile().getName());
+
+        source.sendSuccess(() -> Component.translatable(
+                "tablegames.command.credits.paid", amount, target.getDisplayName()), false);
+        target.sendSystemMessage(Component.translatable(
+                "tablegames.command.credits.pay_received", amount, sender.getDisplayName()));
+        return 1;
     }
 
     private static int give(CommandSourceStack source, ServerPlayer target, long amount) {

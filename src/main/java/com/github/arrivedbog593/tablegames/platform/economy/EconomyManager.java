@@ -4,9 +4,9 @@ import com.github.arrivedbog593.tablegames.engine.economy.CraftingRelation;
 import com.github.arrivedbog593.tablegames.engine.economy.CreditValueTable;
 import com.github.arrivedbog593.tablegames.engine.economy.EconomyIssue;
 import com.github.arrivedbog593.tablegames.engine.economy.EconomyValidator;
+import com.github.arrivedbog593.tablegames.platform.network.CatalogSync;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 
@@ -96,6 +96,13 @@ public final class EconomyManager {
             LOGGER.info("Economy ready: {} convertible items, {} priced recipes",
                     liveTable.size(), recipes.size());
         }
+
+        // Every edit to prices, conversion values or the spread comes through
+        // here, which makes this the one place where an open screen can be
+        // told its catalog moved. Doing it at each call site instead means
+        // the next person to add one forgets, and the bug that comes back is
+        // an administrator repricing the wrong entry.
+        CatalogSync.refresh(server);
     }
 
     /**
@@ -109,11 +116,34 @@ public final class EconomyManager {
      */
     public List<EconomyIssue> previewConversion(MinecraftServer server,
                                                 String itemId, long credits) {
+        return previewConversions(server, Map.of(itemId, credits));
+    }
+
+    /**
+     * Checks what would happen if several items were repriced at once.
+     * <p>
+     * One item at a time is not enough because the prices are tied to each other
+     * by recipes. Nine diamonds make a block, so their values have to stay in
+     * that ratio — and a pair already in ratio cannot be moved to a new scale
+     * one step at a time: raising the diamond first mints credits against the
+     * block, raising the block first mints them against the diamond, and each
+     * change on its own is correctly refused. Judged together, both sides
+     * move and nothing is exploitable at any point.
+     * <p>
+     * The same shape appears with any chain of items that craft into one
+     * another, which is exactly what a set of currency coins is.
+     *
+     * @param changes item id to proposed value, applied on top of the live
+     *                table before validating
+     * @return every issue the changes would introduce; empty means it is safe
+     */
+    public List<EconomyIssue> previewConversions(MinecraftServer server,
+                                                 Map<String, Long> changes) {
         Map<String, Long> proposed = new LinkedHashMap<>();
         for (String existing : liveTable.itemIds()) {
             liveTable.valueOf(existing).ifPresent(value -> proposed.put(existing, value));
         }
-        proposed.put(itemId, credits);
+        proposed.putAll(changes);
 
         CreditValueTable.Builder builder = CreditValueTable.builder();
         proposed.forEach(builder::put);
@@ -172,32 +202,4 @@ public final class EconomyManager {
                 .map(unit -> unit * stack.getCount());
     }
 
-    /**
-     * Turns credits back into items, splitting into stacks.
-     * Leftover credits are reported, never dropped.
-     */
-    public Optional<Redemption> redeem(Item item, long credits) {
-        String itemId = ItemIds.idOf(item);
-        if (!liveTable.contains(itemId)) {
-            return Optional.empty();
-        }
-        CreditValueTable.Purchase purchase = liveTable.itemsFor(itemId, credits);
-        List<ItemStack> stacks = new ArrayList<>();
-        long left = purchase.count();
-        int maxStack = new ItemStack(item).getMaxStackSize();
-        while (left > 0) {
-            int size = (int) Math.min(left, maxStack);
-            stacks.add(new ItemStack(item, size));
-            left -= size;
-        }
-        return Optional.of(new Redemption(stacks, purchase.count(), purchase.remainder()));
-    }
-
-    /**
-     * @param stacks    items to hand over, already split
-     * @param count     total items
-     * @param remainder credits that did not cover a whole item
-     */
-    public record Redemption(List<ItemStack> stacks, long count, long remainder) {
-    }
 }

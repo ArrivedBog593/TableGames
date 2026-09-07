@@ -36,10 +36,21 @@ public class ShopScreen extends AbstractContainerScreen<ShopMenu> {
     private static final int CELL_HEIGHT = 20;
     private static final int GRID_X = 8;
     /** Below the controls' row, with a gap. The two used to touch. */
-    private static final int GRID_Y = 35;
+    private static final int GRID_Y = 46;
 
+    /**
+     * The balance sits on a row of its own, between the panel title and the
+     * search field.
+     * <p>
+     * It shared the title's row until the figure grew a second number, and
+     * two right-aligned words ran straight through "Casino shop" on any
+     * balance worth having. A row costs eleven pixels of a panel whose height
+     * is a layout decision rather than a texture, which is cheap next to a
+     * shopper reading a number that overlaps a word.
+     */
+    private static final int BALANCE_Y = 17;
     /** The search field and the sort button share a row above the grid. */
-    private static final int SEARCH_Y = 17;
+    private static final int SEARCH_Y = 28;
     /**
      * Tall enough for an accented capital.
      * <p>
@@ -146,13 +157,15 @@ public class ShopScreen extends AbstractContainerScreen<ShopMenu> {
         graphics.drawString(font, title, titleLabelX, titleLabelY, 0x404040, false);
         graphics.drawString(font, playerInventoryTitle,
                 inventoryLabelX, inventoryLabelY, 0x404040, false);
-        // On the title row, right aligned. It used to sit at y=17, which is
-        // exactly where the search field now lives — the field covered the
-        // one number a shopper checks most.
-        Component balance = Component.translatable(
-                "tablegames.shop.balance", format(menu.balance()));
-        graphics.drawString(font, balance,
-                imageWidth - 8 - font.width(balance), titleLabelY, 0x2E7D32, false);
+
+        // Two numbers when part of the balance is spoken for, and the
+        // spendable one first: that is the figure the prices below are being
+        // compared against, and the one that explains a greyed row.
+        Component balance = menu.committed() > 0
+                ? Component.translatable("tablegames.shop.balance_committed",
+                format(menu.spendable()), format(menu.balance()))
+                : Component.translatable("tablegames.shop.balance", format(menu.balance()));
+        graphics.drawString(font, balance, GRID_X, BALANCE_Y, 0x2E7D32, false);
     }
 
     private void renderCatalog(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -192,7 +205,10 @@ public class ShopScreen extends AbstractContainerScreen<ShopMenu> {
             int y = topPos + GRID_Y + (cell / COLUMNS) * CELL_HEIGHT;
 
             boolean hovered = isOver(mouseX, mouseY, x, y, CELL_WIDTH - 2, CELL_HEIGHT - 2);
-            boolean affordable = menu.balance() >= entry.price();
+            // Spendable, not balance: a wager already promised these credits
+            // to a spin, and drawing the row as buyable would be a lie the
+            // click then has to break.
+            boolean affordable = menu.spendable() >= entry.price();
 
             // Each cell gets its own darker plate. The recess behind them is
             // one continuous well, so without this there is nothing saying

@@ -119,4 +119,55 @@ class HouseBankrollTest {
         assertThrows(IllegalArgumentException.class,
                 () -> HouseBankroll.of(1000).maximumBet(-1));
     }
+
+    // --- The reserve follows what has been promised ------------------------------
+
+    @Test
+    void anEmptyRoomLeavesTheOperatorsFloorAlone() {
+        HouseBankroll bankroll = HouseBankroll.of(1_000_000);
+
+        assertEquals(HouseBankroll.DEFAULT_MINIMUM_RESERVE,
+                bankroll.withReserveAtLeast(0).minimumReserve());
+    }
+
+    @Test
+    void aBusyRoomRaisesTheReserveToWhatItOwes() {
+        // The point of the whole thing: ten thousand is a meaningless floor
+        // beside a bank this size, and the number that actually matters is
+        // what the tables are holding.
+        HouseBankroll bankroll = HouseBankroll.of(100_000_000);
+
+        assertEquals(5_000_000, bankroll.withReserveAtLeast(5_000_000).minimumReserve());
+    }
+
+    @Test
+    void theHouseClosesWhenItCanNoLongerCoverWhatItPromised() {
+        // Only reachable after paying out: what a table may commit is a slice
+        // of the balance, so the two cross when the balance falls afterward.
+        HouseBankroll afterPayouts = new HouseBankroll(3_000_000, 5, 10_000)
+                .withReserveAtLeast(5_000_000);
+
+        assertFalse(afterPayouts.isOpen());
+        assertEquals(HouseBankroll.Status.CLOSED, afterPayouts.status());
+        assertEquals(0, afterPayouts.maximumBet(35));
+    }
+
+    @Test
+    void aReserveBelowTheFloorDoesNotLowerIt() {
+        HouseBankroll bankroll = HouseBankroll.of(1_000_000);
+
+        assertEquals(HouseBankroll.DEFAULT_MINIMUM_RESERVE,
+                bankroll.withReserveAtLeast(500).minimumReserve());
+    }
+
+    @Test
+    void raisingTheReserveChangesNothingElse() {
+        HouseBankroll bankroll = new HouseBankroll(80_000_000, 7, 10_000);
+
+        HouseBankroll raised = bankroll.withReserveAtLeast(1_000_000);
+
+        assertEquals(bankroll.balance(), raised.balance());
+        assertEquals(bankroll.exposurePercent(), raised.exposurePercent());
+        assertEquals(bankroll.maximumExposure(), raised.maximumExposure());
+    }
 }

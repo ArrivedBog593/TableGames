@@ -43,7 +43,17 @@ class RouletteSessionTest {
             seats[i] = Seat.forPlayer(i, ids[i], stacks[i]);
         }
         RouletteSession session = new RouletteSession(
-                List.of(seats), fixedTo(wheel, target), wheel, 10, 10_000);
+                List.of(seats), fixedTo(wheel, target), wheel,
+                new BetLimits(10, 10_000, 10, 10_000));
+        session.begin();
+        return session;
+    }
+
+    private static RouletteSession sessionWithLimits(BetLimits limits, long stack) {
+        RouletteWheel wheel = RouletteWheel.EUROPEAN;
+        RouletteSession session = new RouletteSession(
+                List.of(Seat.forPlayer(0, ALICE, stack)),
+                fixedTo(wheel, european(17)), wheel, limits);
         session.begin();
         return session;
     }
@@ -332,5 +342,65 @@ class RouletteSessionTest {
         session.submit(ALICE, new RouletteAction.ClearBets());
         assertTrue(session.submit(ALICE, new RouletteAction.Place(
                 new RouletteBet(BetType.STRAIGHT_UP, seventeen, 10_000))).accepted());
+    }
+
+    // --- The limits come from the table, not from the game ----------------------
+
+    @Test
+    void aTableMayTakeSmallerChipsThanTheDefault() {
+        // The disagreement this replaced: the game fixed the minimum at ten
+        // and the block enforced whatever it had been configured with, so a
+        // table set to take five-credit chips accepted a wager the session
+        // then refused when the bets were replayed at the spin. The player
+        // watched the chip land and it was never settled either way.
+        RouletteSession session = sessionWithLimits(
+                new BetLimits(1, BetLimits.UNLIMITED, 1, BetLimits.UNLIMITED), 1_000);
+
+        assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                        RouletteBet.outside(BetType.RED, 5))).accepted(),
+                "the table set the minimum to one, so five is a legal chip");
+    }
+
+    @Test
+    void insideAndOutsideMinimumsApplyToTheirOwnBets() {
+        RouletteSession session = sessionWithLimits(
+                new BetLimits(100, BetLimits.UNLIMITED, 10, BetLimits.UNLIMITED), 10_000);
+
+        assertFalse(session.submit(ALICE, new RouletteAction.Place(
+                        new RouletteBet(BetType.STRAIGHT_UP, european(17), 50))).accepted(),
+                "fifty is under the inside minimum");
+        assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                        RouletteBet.outside(BetType.RED, 50))).accepted(),
+                "the same fifty clears the outside minimum");
+    }
+
+    @Test
+    void insideAndOutsideMaximumsApplyToTheirOwnBets() {
+        // The real reason for two ceilings: a straight-up pays thirty-five to
+        // one and red pays one to one, so the same stake is a very different
+        // liability depending on where it sits.
+        RouletteSession session = sessionWithLimits(new BetLimits(10, 100, 10, 5_000), 10_000);
+
+        assertFalse(session.submit(ALICE, new RouletteAction.Place(
+                new RouletteBet(BetType.STRAIGHT_UP, european(17), 500))).accepted());
+        assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                RouletteBet.outside(BetType.RED, 500))).accepted());
+    }
+
+    @Test
+    void anUnconfiguredTableImposesNoCeilingOfItsOwn() {
+        // What the bankroll allows is the platform's business. With no table
+        // limit set, the engine must not invent one.
+        RouletteSession session = sessionWithLimits(BetLimits.DEFAULT, 100_000_000);
+
+        assertTrue(session.submit(ALICE, new RouletteAction.Place(
+                new RouletteBet(BetType.STRAIGHT_UP, european(17), 50_000_000))).accepted());
+    }
+
+    @Test
+    void aSessionRefusesToExistWithoutLimits() {
+        assertThrows(NullPointerException.class, () -> new RouletteSession(
+                List.of(Seat.forPlayer(0, ALICE, 1_000)),
+                fixedTo(RouletteWheel.EUROPEAN, european(17)), RouletteWheel.EUROPEAN, null));
     }
 }

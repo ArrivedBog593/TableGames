@@ -72,8 +72,14 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
         graphics.drawString(font, title, titleLabelX, titleLabelY, 0x404040, false);
         graphics.drawString(font, playerInventoryTitle,
                 inventoryLabelX, inventoryLabelY, 0x404040, false);
-        graphics.drawString(font, Component.translatable(
-                        "tablegames.cashier.balance", format(menu.balance())),
+        // Spendable first, then the whole balance: the credits are still
+        // theirs, they are just promised to a round that has not settled.
+        // Kept short because the line shares its row with the panel title.
+        graphics.drawString(font, menu.committed() > 0
+                        ? Component.translatable("tablegames.cashier.balance_committed",
+                        format(menu.spendable()), format(menu.balance()))
+                        : Component.translatable("tablegames.cashier.balance",
+                        format(menu.balance())),
                 8, 17, 0x2E7D32, false);
     }
 
@@ -110,7 +116,8 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
             CashierCatalogPayload.Entry entry = entries.get(scroll + row);
             int rowY = y + row * ROW_HEIGHT;
             boolean hovered = isOver(mouseX, mouseY, x, rowY, LIST_WIDTH, ROW_HEIGHT - 2);
-            boolean affordable = menu.balance() >= entry.buyback();
+            // Spendable, not balance. See the note in renderLabels.
+            boolean affordable = menu.spendable() >= entry.buyback();
 
             graphics.fill(x, rowY, x + LIST_WIDTH, rowY + ROW_HEIGHT - 2,
                     hovered ? 0x40FFFFFF : 0x20000000);

@@ -17,7 +17,10 @@ package com.github.arrivedbog593.tablegames.engine.economy;
  *
  * @param balance         credits the households
  * @param exposurePercent most of the bankroll a single payout may claim
- * @param minimumReserve  below this, house-banked games close entirely
+ * @param minimumReserve  below this, house-banked games close entirely. The
+ *                        operator sets a floor and
+ *                        {@link #withReserveAtLeast} raises it to whatever
+ *                        the tables have already promised
  */
 public record HouseBankroll(long balance, int exposurePercent, long minimumReserve) {
 
@@ -31,6 +34,13 @@ public record HouseBankroll(long balance, int exposurePercent, long minimumReser
      * Under this, the bankroll is too thin for the derived limits to mean
      * anything and house games simply close. Player-versus-player games are
      * unaffected, since the house risks nothing in those.
+     * <p>
+     * A floor and not the whole answer. Ten thousand is a sensible number for
+     * a casino that opened last week and a meaningless one beside a bank of a
+     * hundred million, which could lose all but a ten-thousandth of itself
+     * with every table still open and no warning printed anywhere. What the
+     * reserve should actually protect is what the house has already promised,
+     * which changes minute by minute: see {@link #withReserveAtLeast}.
      */
     public static final long DEFAULT_MINIMUM_RESERVE = 10_000;
 
@@ -123,6 +133,31 @@ public record HouseBankroll(long balance, int exposurePercent, long minimumReser
         }
         long exposure = desiredMaximumBet * (payoutRatio + 1L);
         return Math.max(minimumReserve, exposure * 100 / exposurePercent);
+    }
+
+    /**
+     * The same bankroll, with the reserve raised to cover what is promised.
+     * <p>
+     * Called with the exposure, the tables are holding right now, so the
+     * reserve stops being a number somebody typed once and becomes a
+     * statement about the current moment: a house whose balance no longer
+     * covers the rounds already in flight has no business opening another
+     * one. It rises as the room fills and falls back to the operator's floor
+     * when the last table settles, the same way the table limits already
+     * follow the balance.
+     * <p>
+     * This bites exactly when it should. The exposure a table may commit is
+     * itself a slice of the balance, so the two only cross when the balance
+     * falls after the promises were made — which is to say, when the house
+     * has just been paid out.
+     *
+     * @param committed what every table has riding on unsettled rounds
+     */
+    public HouseBankroll withReserveAtLeast(long committed) {
+        if (committed <= minimumReserve) {
+            return this;
+        }
+        return new HouseBankroll(balance, exposurePercent, committed);
     }
 
     /** The same bankroll with a different balance. */

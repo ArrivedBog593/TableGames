@@ -359,8 +359,14 @@ public class RouletteScreen extends TableScreen {
     private void renderHeader(GuiGraphics graphics, RouletteStatePayload state) {
         graphics.drawString(font, title, left + 8, top + 7, LABEL_TEXT, false);
 
-        Component balance = Component.translatable(
-                "tablegames.roulette.balance", format(state.balance()));
+        // The second half appears only when another table is holding some of
+        // it. A player who cannot see why their chips are greyed out here
+        // would have no way of finding the table that is holding them.
+        Component balance = state.elsewhere() > 0
+                ? Component.translatable("tablegames.roulette.balance_elsewhere",
+                format(state.placeable()), format(state.balance()))
+                : Component.translatable("tablegames.roulette.balance",
+                format(state.balance()));
         graphics.drawString(font, balance,
                 left + FELT_W - 8 - font.width(balance), top + 7, 0xFF2E7D32, false);
 
@@ -439,7 +445,11 @@ public class RouletteScreen extends TableScreen {
             // whole wager has to reach, not what a single chip has to be
             // worth, and a table taking wagers from 10 up should still let
             // somebody build one out of fives.
-            boolean usable = state.balance() >= CHIPS[i];
+            // Placeable, not balance: credits riding on another table are
+            // spoken for, and this one will refuse a chip built out of them.
+            // What is already on this felt is not subtracted because the
+            // table's own rules make room for the wagers it is holding.
+            boolean usable = state.placeable() >= CHIPS[i];
             boolean selected = i == chipIndex && !usingCustomAmount();
 
             drawButton(graphics, x, chipY, CHIP_W, CHIP_H,
@@ -552,7 +562,7 @@ public class RouletteScreen extends TableScreen {
     }
 
     private void drawLabeledButton(GuiGraphics graphics, int mouseX, int mouseY,
-                                    int x, int y, Component label, int face) {
+                                   int x, int y, Component label, int face) {
         drawButton(graphics, x, y, BUTTON_W, CHIP_H, face,
                 isOver(mouseX, mouseY, x, y, BUTTON_W, CHIP_H));
         graphics.drawString(font, label,

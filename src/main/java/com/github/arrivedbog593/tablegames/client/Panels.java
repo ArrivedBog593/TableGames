@@ -122,8 +122,21 @@ public final class Panels {
         }
     }
 
-    /** An inventory slot's well, at vanilla's 18 by 18. */
+    /**
+     * A slot's frame, given the coordinates of the slot itself.
+     * <p>
+     * Drawn one pixel up and left of what is passed in, because a
+     * {@code Slot} names where its <em>item</em> goes: the sixteen-by-sixteen
+     * square inside the frame, not the eighteen-by-eighteen frame around it.
+     * Vanilla's textures are anchored the same way.
+     * <p>
+     * Getting this wrong is invisible until a cursor moves. Vanilla
+     * both places the item and the hover highlight at the slot's own
+     * coordinates, so a frame drawn there instead sits a pixel down and right
+     * of both, and the highlight ends up straddling the border rather than
+     * filling the square.
+     */
     public static void slot(GuiGraphics g, int x, int y) {
-        recess(g, x, y, 18, 18);
+        recess(g, x - 1, y - 1, 18, 18);
     }
 }

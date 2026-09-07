@@ -155,11 +155,19 @@ public final class CreditStorage extends SavedData {
     /**
      * The bankroll with the server's configured risk settings, which is what
      * table limits are derived from.
+     * <p>
+     * The configured reserve is a floor, not the final figure: it is raised
+     * here to whatever the tables have riding on rounds that have not settled
+     * yet. A house that cannot cover the promises already made should not be
+     * taking new ones, and asking the live exposure every time means the
+     * answer is about this minute rather than about whatever number somebody
+     * typed when the casino opened.
      */
     public HouseBankroll bankroll(MinecraftServer server) {
         EconomyData settings = EconomyData.get(server);
         return new HouseBankroll(houseBalance,
-                settings.exposurePercent(), settings.minimumReserve());
+                settings.exposurePercent(), settings.minimumReserve())
+                .withReserveAtLeast(OutcomeSettler.exposure().total());
     }
 
     /** Credits won by the house: rake, losing bets, and shop purchases. */
@@ -210,7 +218,4 @@ public final class CreditStorage extends SavedData {
         setDirty();
     }
 
-    public int accountCount() {
-        return accounts.size();
-    }
 }

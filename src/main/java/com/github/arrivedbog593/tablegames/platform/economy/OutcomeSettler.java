@@ -3,6 +3,7 @@ package com.github.arrivedbog593.tablegames.platform.economy;
 import com.github.arrivedbog593.tablegames.engine.economy.CreditAccount;
 import com.github.arrivedbog593.tablegames.engine.economy.HouseBankroll;
 import com.github.arrivedbog593.tablegames.engine.economy.HouseExposure;
+import com.github.arrivedbog593.tablegames.engine.economy.PlayerCommitments;
 import com.github.arrivedbog593.tablegames.engine.economy.SettlementAudit;
 import com.github.arrivedbog593.tablegames.engine.economy.TransactionType;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
@@ -14,6 +15,7 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Turns a finished hand into real credits.
@@ -229,6 +231,41 @@ public final class OutcomeSettler {
     /** Frees a table's share of the exposure when its round ends. */
     public static void releaseExposure(String tableKey) {
         EXPOSURE.release(tableKey);
+    }
+
+    /**
+     * What every player has riding on a round that has not settled yet.
+     * <p>
+     * The mirror of {@link #EXPOSURE}: that one keeps the tables from
+     * promising the same bankroll twice, this one keeps a player from
+     * promising the same credits twice. Same lifetime, same reason for not
+     * persisting.
+     */
+    private static final PlayerCommitments STAKES = new PlayerCommitments();
+
+    public static PlayerCommitments stakes() {
+        return STAKES;
+    }
+
+    /** Records what one player now has on one table. Zero releases it. */
+    public static void commitStake(String tableKey, UUID playerId, long staked) {
+        STAKES.commit(playerId, tableKey, staked);
+    }
+
+    /** Frees what everybody had on a table when its round ends. */
+    public static void releaseStakes(String tableKey) {
+        STAKES.release(tableKey);
+    }
+
+    /**
+     * What this player may spend without touching a live wager.
+     * <p>
+     * What every spender asks instead of asking for the balance. Wagers are
+     * not debited when they are placed, so the balance still counts credits
+     * that are already promised to a spin.
+     */
+    public static long spendable(MinecraftServer server, UUID playerId) {
+        return STAKES.spendable(playerId, CreditStorage.get(server).balanceOf(playerId));
     }
 
     /**

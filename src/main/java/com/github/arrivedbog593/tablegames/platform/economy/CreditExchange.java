@@ -90,10 +90,16 @@ public final class CreditExchange {
             return Result.failed("tablegames.exchange.not_convertible");
         }
 
+        // Spendable, not balance: what is riding on a live round is already
+        // promised to it. See the note in redeemExactly.
         long balance = storage.balanceOf(player.getUUID());
-        long affordable = balance / unitPrice;
+        long spendable = OutcomeSettler.stakes().spendable(player.getUUID(), balance);
+        long affordable = spendable / unitPrice;
         if (affordable <= 0) {
-            return Result.shortOf("tablegames.exchange.cannot_afford_one", 0, unitPrice);
+            return Result.shortOf(unitPrice <= balance
+                            ? "tablegames.exchange.credits_on_a_table"
+                            : "tablegames.exchange.cannot_afford_one",
+                    0, unitPrice);
         }
 
         long count = Math.min(affordable, Inventories.spaceFor(player, item));
@@ -120,7 +126,13 @@ public final class CreditExchange {
             return Result.failed("tablegames.exchange.not_convertible");
         }
 
+        // Spendable, not balance. A wager is not debited when it is placed,
+        // so the balance still counts credits that a spin is waiting on.
+        // Buying items with them was a way of cancelling a wager after
+        // betting had closed, since the round then dropped a stake it could
+        // no longer cover.
         long balance = storage.balanceOf(player.getUUID());
+        long spendable = OutcomeSettler.stakes().spendable(player.getUUID(), balance);
         // Multiplied exactly: a requested count large enough to overflow used
         // to wrap negative and sail past the affordability check.
         long cost;
@@ -128,11 +140,16 @@ public final class CreditExchange {
             cost = Math.multiplyExact(requested, unitPrice);
         } catch (ArithmeticException absurd) {
             return Result.shortOf("tablegames.exchange.cannot_afford",
-                    balance / unitPrice, Long.MAX_VALUE);
+                    spendable / unitPrice, Long.MAX_VALUE);
         }
-        if (cost > balance) {
-            return Result.shortOf("tablegames.exchange.cannot_afford",
-                    balance / unitPrice, cost);
+        if (cost > spendable) {
+            // Short of credits and short only because of a live wager are
+            // different problems. Saying "not enough credits" to somebody
+            // whose balance plainly covers it reads as a bug.
+            return Result.shortOf(cost <= balance
+                            ? "tablegames.exchange.credits_on_a_table"
+                            : "tablegames.exchange.cannot_afford",
+                    spendable / unitPrice, cost);
         }
 
         long room = Inventories.spaceFor(player, item);

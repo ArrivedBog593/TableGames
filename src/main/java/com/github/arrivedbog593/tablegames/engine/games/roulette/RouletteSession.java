@@ -35,8 +35,18 @@ import java.util.random.RandomGenerator;
 public final class RouletteSession extends GameSession {
 
     private final RouletteWheel wheel;
-    private final long minimumBet;
-    private final long maximumBet;
+
+    /**
+     * What this table takes, per bet type.
+     * <p>
+     * Passed in rather than fixed by the game, so the rules enforced here are
+     * the same ones the platform layer quoted to the player. When the two
+     * disagreed, a table configured to accept five-credit chips took the
+     * wager at the block and had it refused here at the spin, where a refusal
+     * is a log line and a stake that stops existing between being taken and
+     * being paid.
+     */
+    private final BetLimits limits;
 
     private final Map<UUID, List<RouletteBet>> bets = new LinkedHashMap<>();
     private final Set<UUID> doneBetting = new LinkedHashSet<>();
@@ -44,15 +54,12 @@ public final class RouletteSession extends GameSession {
     private Pocket result;
 
     public RouletteSession(List<Seat> seats, RandomGenerator random,
-                           RouletteWheel wheel, long minimumBet, long maximumBet) {
+                           RouletteWheel wheel, BetLimits limits) {
         super(seats, random);
         this.wheel = Objects.requireNonNull(wheel, "wheel");
-        if (minimumBet <= 0 || maximumBet < minimumBet) {
-            throw new IllegalArgumentException(
-                    "Invalid bet limits: " + minimumBet + ".." + maximumBet);
-        }
-        this.minimumBet = minimumBet;
-        this.maximumBet = maximumBet;
+        // No range checking here: BetLimits refuses to exist in an invalid
+        // state, so anything that arrives is already coherent.
+        this.limits = Objects.requireNonNull(limits, "limits");
     }
 
     @Override
@@ -97,7 +104,7 @@ public final class RouletteSession extends GameSession {
     }
 
     private ActionResult placeBet(Seat seat, RouletteBet bet) {
-        if (bet.amount() < minimumBet) {
+        if (bet.amount() < limits.minimumFor(bet.type())) {
             return ActionResult.rejected("tablegames.reject.below_minimum_bet");
         }
         // The limit is on the position, not on the chip. Checking one wager
@@ -105,7 +112,7 @@ public final class RouletteSession extends GameSession {
         // the same number are five legal bets that together commit what one
         // illegal bet would have. What the house has to be able to pay is the
         // total riding on a pocket, so that is what gets measured.
-        if (stakedOn(seat.playerId(), bet) + bet.amount() > maximumBet) {
+        if (stakedOn(seat.playerId(), bet) + bet.amount() > limits.maximumFor(bet.type())) {
             return ActionResult.rejected("tablegames.reject.above_maximum_bet");
         }
         if (bet.type().requiresTarget() && !wheel.pockets().contains(bet.target())) {
@@ -172,6 +179,11 @@ public final class RouletteSession extends GameSession {
 
     public RouletteWheel wheel() {
         return wheel;
+    }
+
+    /** What this table takes, per bet type. */
+    public BetLimits limits() {
+        return limits;
     }
 
     /**

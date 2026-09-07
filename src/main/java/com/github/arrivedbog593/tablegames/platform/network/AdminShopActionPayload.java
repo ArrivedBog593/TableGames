@@ -1,6 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.network;
 
 import com.github.arrivedbog593.tablegames.TableGames;
+import com.github.arrivedbog593.tablegames.platform.economy.AdminNotices;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyEvents;
 import com.github.arrivedbog593.tablegames.platform.economy.ShopEntry;
@@ -14,7 +15,6 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
@@ -48,10 +48,10 @@ public record AdminShopActionPayload(int kind, int number, long price)
 
     public static final StreamCodec<RegistryFriendlyByteBuf, AdminShopActionPayload>
             STREAM_CODEC = StreamCodec.composite(
-                    ByteBufCodecs.VAR_INT, AdminShopActionPayload::kind,
-                    ByteBufCodecs.VAR_INT, AdminShopActionPayload::number,
-                    ByteBufCodecs.VAR_LONG, AdminShopActionPayload::price,
-                    AdminShopActionPayload::new);
+            ByteBufCodecs.VAR_INT, AdminShopActionPayload::kind,
+            ByteBufCodecs.VAR_INT, AdminShopActionPayload::number,
+            ByteBufCodecs.VAR_LONG, AdminShopActionPayload::price,
+            AdminShopActionPayload::new);
 
     @Override
     public @NotNull Type<? extends CustomPacketPayload> type() {
@@ -92,8 +92,11 @@ public record AdminShopActionPayload(int kind, int number, long price)
                 default -> {
                 }
             }
-            PacketDistributor.sendToPlayer(player,
-                    ShopCatalogPayload.current(player.server));
+            // No catalog is sent from here. Each of the three above rebuilds
+            // the economy when it changes something, and that refreshes every
+            // open screen, this player's included. Sending one more here
+            // would have left the other administrator looking at the version
+            // that no longer exists.
         });
     }
 
@@ -109,9 +112,9 @@ public record AdminShopActionPayload(int kind, int number, long price)
         EconomyEvents.economy().rebuild(player.server);
         menu.clearInput();
 
-        player.displayClientMessage(Component.translatable(
+        AdminNotices.announce(player, Component.translatable(
                 "tablegames.command.shop.added",
-                listing.getHoverName(), payload.price(), number), false);
+                listing.getHoverName(), payload.price(), number));
     }
 
     private static void reprice(AdminShopActionPayload payload, ServerPlayer player) {
@@ -126,10 +129,10 @@ public record AdminShopActionPayload(int kind, int number, long price)
             return;
         }
         EconomyEvents.economy().rebuild(player.server);
-        player.displayClientMessage(Component.translatable(
+        AdminNotices.announce(player, Component.translatable(
                 "tablegames.command.shop.repriced",
                 updated.get().stack().getHoverName(), payload.price(),
-                payload.number()), false);
+                payload.number()));
     }
 
     private static void remove(AdminShopActionPayload payload, ServerPlayer player) {
@@ -141,8 +144,11 @@ public record AdminShopActionPayload(int kind, int number, long price)
             return;
         }
         EconomyEvents.economy().rebuild(player.server);
-        player.displayClientMessage(Component.translatable(
+        // Announced rather than whispered. The other administrator's numbers
+        // just moved: everything after this entry shifts up one, and their
+        // screen redrawing is different from being told why.
+        AdminNotices.announce(player, Component.translatable(
                 "tablegames.command.shop.removed",
-                removed.get().stack().getHoverName(), payload.number()), false);
+                removed.get().stack().getHoverName(), payload.number()));
     }
 }

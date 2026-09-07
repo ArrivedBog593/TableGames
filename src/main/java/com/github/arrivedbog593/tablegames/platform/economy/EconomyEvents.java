@@ -6,6 +6,7 @@ import com.github.arrivedbog593.tablegames.engine.economy.TransactionType;
 import com.github.arrivedbog593.tablegames.platform.command.AdminCommands;
 import com.github.arrivedbog593.tablegames.platform.command.CreditCommands;
 import com.github.arrivedbog593.tablegames.platform.command.EconomyCommands;
+import com.github.arrivedbog593.tablegames.platform.command.HelpCommands;
 import com.github.arrivedbog593.tablegames.platform.command.HouseCommands;
 import com.github.arrivedbog593.tablegames.platform.command.TableCommands;
 import net.minecraft.server.MinecraftServer;
@@ -52,11 +53,6 @@ public final class EconomyEvents {
         return MANAGER;
     }
 
-    /** Null until the server has started. */
-    public static TransactionLog transactionLog() {
-        return transactionLog;
-    }
-
     /**
      * Writes a movement to the log and advances the saved sequence in one
      * step.
@@ -99,6 +95,7 @@ public final class EconomyEvents {
         // stop hook, and a stale commitment would silently narrow every
         // table's limits with nothing left to release it.
         OutcomeSettler.exposure().clear();
+        OutcomeSettler.stakes().clear();
         MinecraftServer server = event.getServer();
         CreditStorage storage = CreditStorage.get(server);
 
@@ -131,6 +128,7 @@ public final class EconomyEvents {
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
+        HelpCommands.register(event.getDispatcher());
         CreditCommands.register(event.getDispatcher());
         EconomyCommands.register(event.getDispatcher());
         TableCommands.register(event.getDispatcher());
@@ -145,6 +143,7 @@ public final class EconomyEvents {
         // table's limit in the next world opened in the same process — the
         // registry is static, so a single-player session carries it across.
         OutcomeSettler.exposure().clear();
+        OutcomeSettler.stakes().clear();
         MinecraftServer server = event.getServer();
         CreditStorage storage = CreditStorage.get(server);
 

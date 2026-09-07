@@ -1,5 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.menu;
 
+import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.item.AdminKeyItem;
 import com.github.arrivedbog593.tablegames.platform.registry.ModMenus;
 import net.minecraft.core.BlockPos;
@@ -10,49 +11,58 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.inventory.DataSlot;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Configuring what the shop sells.
+ * Configuring what the cashier pays for.
  * <p>
- * A menu rather than a plain screen because it moves items: putting a stack
- * in the slot is how an admin says what to put on sale, components and all.
- * There is no way to express "this netherite sword, with these five
- * enchantments" in a command, so the slot is not a convenience — it is the
- * only workable interface for the thing the shop now stores.
+ * The same shape as {@link AdminShopMenu} and for the same reason: pricing an
+ * item means putting one in a slot. Typing an item id into a command works
+ * until somebody has to spell out a modded id from memory, and the thing they
+ * want to price is already in their hand.
  * <p>
- * The slot holds the admin's own item and hands it back when the screen
- * closes. Listing something copies it rather than consuming it, so an admin
- * does not lose the sword they used to describe the sale.
+ * It carries the buyback surcharge as well, because that is the cashier's own
+ * setting rather than the casino's: it is the cut this counter keeps, so it
+ * belongs where the counter is configured. The exposure percentage and the
+ * reserve are not here, since those are about the bankroll behind every table
+ * and have nothing to do with this block.
  */
-public class AdminShopMenu extends AbstractContainerMenu {
+public class AdminCashierMenu extends AbstractContainerMenu {
 
     /** Geometry, shared with the screen. Slots are positioned here. */
     public static final int PANEL_WIDTH = 220;
-    // Eighteen taller than it was, for the second action row: removing is a
-    // button under the reprice button now, rather than a shift click on the
-    // entry. Height is a layout decision here, since the frame is drawn from
-    // rectangles instead of blitted from a texture.
-    public static final int PANEL_HEIGHT = 254;
+    public static final int PANEL_HEIGHT = 273;
     public static final int INPUT_X = 8;
     public static final int INPUT_Y = 120;
-    public static final int INVENTORY_Y = 171;
-    public static final int HOTBAR_Y = 229;
+    public static final int INVENTORY_Y = 190;
+    public static final int HOTBAR_Y = 248;
 
     private final ContainerLevelAccess access;
+    private final Player player;
 
-    /** What is about to be listed. Never persisted; emptied back to the player. */
+    /** What is about to be priced. Never persisted; emptied back to the player. */
     private final SimpleContainer input = new SimpleContainer(1);
 
+    /**
+     * The buyback surcharge, as a percentage.
+     * <p>
+     * Sent rather than assumed, so the field opens showing what is actually
+     * set. An admin editing a box that started at zero would lower a
+     * ten-percent surcharge to nothing by typing nothing at all.
+     */
+    private final DataSlot spread = DataSlot.standalone();
+
     /** Client-side constructor: reads the block position the server wrote. */
-    public AdminShopMenu(int containerId, Inventory inventory, FriendlyByteBuf buffer) {
+    public AdminCashierMenu(int containerId, Inventory inventory, FriendlyByteBuf buffer) {
         this(containerId, inventory, buffer.readBlockPos());
     }
 
-    public AdminShopMenu(int containerId, Inventory inventory, BlockPos pos) {
-        super(ModMenus.ADMIN_SHOP.get(), containerId);
+    public AdminCashierMenu(int containerId, Inventory inventory, BlockPos pos) {
+        super(ModMenus.ADMIN_CASHIER.get(), containerId);
+        this.player = inventory.player;
         this.access = ContainerLevelAccess.create(inventory.player.level(), pos);
 
         addSlot(new Slot(input, 0, INPUT_X, INPUT_Y));
@@ -67,17 +77,32 @@ public class AdminShopMenu extends AbstractContainerMenu {
         for (int column = 0; column < 9; column++) {
             addSlot(new Slot(inventory, column, inventoryLeft + column * 18, HOTBAR_Y));
         }
+
+        addDataSlot(spread);
+        refreshSpread();
     }
 
-    /** What is currently in the listing slot. */
+    /** What is currently in the pricing slot. */
     public ItemStack held() {
         return input.getItem(0);
     }
 
-    /** Empties the listing slot, for after something has been listed. */
+    /** The buyback surcharge the server currently has set. */
+    public int spreadPercent() {
+        return spread.get();
+    }
+
+    /** Empties the pricing slot, for after something has been priced. */
     public void clearInput() {
         input.setItem(0, ItemStack.EMPTY);
         broadcastChanges();
+    }
+
+    /** Rereads the surcharge, for after somebody changes it. */
+    public void refreshSpread() {
+        if (player instanceof ServerPlayer server) {
+            spread.set(EconomyData.get(server.server).spreadPercent());
+        }
     }
 
     /**
@@ -100,7 +125,7 @@ public class AdminShopMenu extends AbstractContainerMenu {
     @Override
     public void removed(@NotNull Player who) {
         super.removed(who);
-        // The stack was only ever borrowed to describe a sale.
+        // The stack was only ever borrowed to name an item.
         access.execute((level, pos) -> clearContainer(who, input));
     }
 

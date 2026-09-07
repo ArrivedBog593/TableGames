@@ -29,5 +29,6 @@ public final class ClientSetup {
         event.register(ModMenus.CASHIER.get(), CashierScreen::new);
         event.register(ModMenus.SHOP.get(), ShopScreen::new);
         event.register(ModMenus.ADMIN_SHOP.get(), AdminShopScreen::new);
+        event.register(ModMenus.ADMIN_CASHIER.get(), AdminCashierScreen::new);
     }
 }

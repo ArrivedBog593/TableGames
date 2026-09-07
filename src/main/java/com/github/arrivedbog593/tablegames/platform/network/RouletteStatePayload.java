@@ -7,6 +7,7 @@ import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteBet;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
+import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.mojang.authlib.GameProfile;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.core.UUIDUtil;
@@ -162,21 +163,65 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
     }
 
     /**
+     * What the viewer has, and what of it is already spoken for.
+     * <p>
+     * A record of its own rather than two more fields on
+     * {@link RouletteView}, because {@code StreamCodec.composite} stops at
+     * six components and the view was already using all six. Grouping is
+     * cheaper than a handwritten codec and says something true besides:
+     * these two numbers are only meaningful together.
+     *
+     * @param balance   the viewer's credits, never anybody else's
+     * @param elsewhere what of that balance is riding on other tables, so the
+     *                  screen can grey out a chip this table would refuse.
+     *                  Without it, a player with credits committed across the
+     *                  room sees every chip lit and finds out by clicking.
+     *                  Their stake on <em>this</em> table is not in here: the
+     *                  screen already shows that separately, and this table's
+     *                  rules leave room for the wagers it is holding
+     */
+    public record Funds(long balance, long elsewhere) {
+
+        public static final StreamCodec<ByteBuf, Funds> STREAM_CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.VAR_LONG, Funds::balance,
+                        ByteBufCodecs.VAR_LONG, Funds::elsewhere,
+                        Funds::new);
+
+        /** What the viewer may still put on this table's felt. */
+        public long placeable() {
+            return Math.max(0L, balance - elsewhere);
+        }
+    }
+
+    /**
      * What is addressed to the recipient alone.
      *
-     * @param balance      the viewer's credits, never anybody else's
+     * @param funds        the viewer's credits and what is spoken for
      * @param tableMinimum the smallest wager this table will take
      * @param tableMaximum the largest wager this table will take right now
      * @param result       {@link #NO_RESULT}, 0 to 36, or {@link #DOUBLE_ZERO}
      * @param myBets       the viewer's own wagers
      * @param otherBets    everybody else's, by seat, so the felt is complete
      */
-    public record RouletteView(long balance, long tableMinimum, long tableMaximum,
+    public record RouletteView(Funds funds, long tableMinimum, long tableMaximum,
                                int result, List<Wager> myBets, List<SeatBets> otherBets) {
+
+        public long balance() {
+            return funds.balance();
+        }
+
+        public long elsewhere() {
+            return funds.elsewhere();
+        }
+
+        public long placeable() {
+            return funds.placeable();
+        }
 
         public static final StreamCodec<ByteBuf, RouletteView> STREAM_CODEC =
                 StreamCodec.composite(
-                        ByteBufCodecs.VAR_LONG, RouletteView::balance,
+                        Funds.STREAM_CODEC, RouletteView::funds,
                         ByteBufCodecs.VAR_LONG, RouletteView::tableMinimum,
                         ByteBufCodecs.VAR_LONG, RouletteView::tableMaximum,
                         ByteBufCodecs.VAR_INT, RouletteView::result,
@@ -202,7 +247,7 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
     public static RouletteStatePayload idle() {
         return new RouletteStatePayload(
                 new TableView(RoundPhase.IDLE.ordinal(), 0, List.of(), 0, NO_SEAT, 0),
-                new RouletteView(0, 0, 0, NO_RESULT, List.of(), List.of()));
+                new RouletteView(new Funds(0, 0), 0, 0, NO_RESULT, List.of(), List.of()));
     }
 
     // --- Convenience for the screen ---------------------------------------------------
@@ -211,12 +256,17 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
         return roulette.balance();
     }
 
-    public long tableMaximum() {
-        return roulette.tableMaximum();
+    /** What of the viewer's balance is riding on some other table. */
+    public long elsewhere() {
+        return roulette.elsewhere();
     }
 
-    public long tableMinimum() {
-        return roulette.tableMinimum();
+    /**
+     * What the viewer may still put on this felt, before counting what they
+     * already have on it.
+     */
+    public long placeable() {
+        return roulette.placeable();
     }
 
     public int secondsLeft() {
@@ -303,7 +353,10 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
         }
 
         RouletteView mine = new RouletteView(
-                CreditStorage.get(server).balanceOf(playerId),
+                new Funds(
+                        CreditStorage.get(server).balanceOf(playerId),
+                        OutcomeSettler.stakes()
+                                .committedElsewhere(playerId, table.commitmentKey())),
                 table.effectiveMinimum(BetType.STRAIGHT_UP),
                 table.currentTableMaximum(server),
                 packed,

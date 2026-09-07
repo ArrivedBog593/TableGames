@@ -6,6 +6,7 @@ import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyEvents;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyManager;
 import com.github.arrivedbog593.tablegames.platform.economy.ItemIds;
+import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.github.arrivedbog593.tablegames.platform.network.CashierCatalogPayload;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlocks;
 import com.github.arrivedbog593.tablegames.platform.registry.ModMenus;
@@ -44,7 +45,7 @@ import java.util.Optional;
  * a balance would overwrite the synced value with zero the moment anything
  * moved.
  */
-public class CashierMenu extends AbstractContainerMenu {
+public class    CashierMenu extends AbstractContainerMenu {
 
     public static final int DEPOSIT_ROWS = 3;
     public static final int DEPOSIT_COLUMNS = 3;
@@ -78,6 +79,17 @@ public class CashierMenu extends AbstractContainerMenu {
     private final DataSlot balanceLow = DataSlot.standalone();
     private final DataSlot balanceHigh = DataSlot.standalone();
 
+    /**
+     * What the player has riding on a round that has not settled.
+     * <p>
+     * The cashier can hand out items for credits, so it has to know what is
+     * already promised elsewhere. Without this the screen offers a trade the
+     * server then refuses, which reads as a broken button rather than as a
+     * wager doing its job.
+     */
+    private final DataSlot committedLow = DataSlot.standalone();
+    private final DataSlot committedHigh = DataSlot.standalone();
+
     /** What the tray is currently worth, so the button can show it. */
     private final DataSlot depositValue = DataSlot.standalone();
 
@@ -110,6 +122,8 @@ public class CashierMenu extends AbstractContainerMenu {
 
         addDataSlot(balanceLow);
         addDataSlot(balanceHigh);
+        addDataSlot(committedLow);
+        addDataSlot(committedHigh);
         addDataSlot(depositValue);
         refreshBalance();
     }
@@ -136,6 +150,16 @@ public class CashierMenu extends AbstractContainerMenu {
         return ((long) balanceHigh.get() << 32) | (balanceLow.get() & 0xFFFFFFFFL);
     }
 
+    /** What of that balance is already promised to a live round. */
+    public long committed() {
+        return ((long) committedHigh.get() << 32) | (committedLow.get() & 0xFFFFFFFFL);
+    }
+
+    /** What the player can actually spend here. Never negative. */
+    public long spendable() {
+        return Math.max(0L, balance() - committed());
+    }
+
     /** What the tray is worth right now. */
     public long depositValue() {
         return depositValue.get();
@@ -155,6 +179,10 @@ public class CashierMenu extends AbstractContainerMenu {
         long balance = storage().balanceOf(player.getUUID());
         balanceLow.set((int) (balance & 0xFFFFFFFFL));
         balanceHigh.set((int) (balance >> 32));
+
+        long committed = OutcomeSettler.stakes().committedBy(player.getUUID());
+        committedLow.set((int) (committed & 0xFFFFFFFFL));
+        committedHigh.set((int) (committed >> 32));
     }
 
     private CreditStorage storage() {

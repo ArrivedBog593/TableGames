@@ -15,56 +15,44 @@ import java.util.random.RandomGenerator;
  * registered as two instances rather than two classes. A server can run both
  * at once: the table block stores which game id it hosts, so one table can be
  * European and the table beside it American.
+ * <p>
+ * A record because a game is configuration and a factory, never a hand in
+ * progress. Everything that changes during a spin lives in
+ * {@link RouletteSession}, and having no room to store it here is the point.
+ *
+ * @param id     registry id, persisted in table block entities
+ * @param wheel  which pockets the ball can land in
+ * @param limits what a table hosting this game takes when nobody configured
+ *               it: a small minimum and no ceiling of the game's own. The
+ *               maximum used to be a flat ten thousand, which nobody chose
+ *               for any reason and which quietly overrode the limit derived
+ *               from the bankroll — a house with a hundred million could
+ *               afford a hundred and thirty-eight thousand on a single number
+ *               and would still refuse anything over ten. A game does not
+ *               know how much the house has, so it is in no position to set
+ *               the number: the bankroll caps what can be paid, and the
+ *               table's own limits cap what it chooses to take
  */
-public final class RouletteGame implements Game {
+public record RouletteGame(String id, RouletteWheel wheel, BetLimits limits)
+        implements Game {
 
     private static final int MAX_SEATS = 8;
-    private static final long DEFAULT_MINIMUM_BET = BetLimits.DEFAULT_MINIMUM;
 
-    /**
-     * No ceiling of the game's own.
-     * <p>
-     * This used to be a flat ten thousand, which nobody chose for any reason
-     * and which quietly overrode the limit derived from the bankroll — a
-     * house with a hundred million could afford a hundred and thirty-eight
-     * thousand on a single number and would still refuse anything over ten.
-     * A game does not know how much the house has, so it is in no position to
-     * set the number: the bankroll caps what can be paid, and a table's own
-     * {@link BetLimits} caps what that table chooses to take.
-     */
-    private static final long DEFAULT_MAXIMUM_BET = Long.MAX_VALUE;
-
-    private final String id;
-    private final RouletteWheel wheel;
-    private final long minimumBet;
-    private final long maximumBet;
-
-    public RouletteGame(String id, RouletteWheel wheel, long minimumBet, long maximumBet) {
-        this.id = Objects.requireNonNull(id, "id");
-        this.wheel = Objects.requireNonNull(wheel, "wheel");
-        if (minimumBet <= 0 || maximumBet < minimumBet) {
-            throw new IllegalArgumentException(
-                    "Invalid bet limits: " + minimumBet + ".." + maximumBet);
-        }
-        this.minimumBet = minimumBet;
-        this.maximumBet = maximumBet;
+    public RouletteGame {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(wheel, "wheel");
+        Objects.requireNonNull(limits, "limits");
     }
 
     /** Single zero, 2.70% house edge. The friendlier default. */
     public static RouletteGame european() {
-        return new RouletteGame("roulette", RouletteWheel.EUROPEAN,
-                DEFAULT_MINIMUM_BET, DEFAULT_MAXIMUM_BET);
+        return new RouletteGame("roulette", RouletteWheel.EUROPEAN, BetLimits.DEFAULT);
     }
 
     /** Zero and double zero, 5.26% house edge. */
     public static RouletteGame american() {
         return new RouletteGame("american_roulette", RouletteWheel.AMERICAN,
-                DEFAULT_MINIMUM_BET, DEFAULT_MAXIMUM_BET);
-    }
-
-    @Override
-    public String id() {
-        return id;
+                BetLimits.DEFAULT);
     }
 
     @Override
@@ -87,40 +75,40 @@ public final class RouletteGame implements Game {
         return true;
     }
 
+    /**
+     * The smallest wager the game takes anywhere on the layout.
+     * <p>
+     * Inside and outside bets have their own minimums, so a single figure can
+     * only be the lower of the two. Anything that needs to know what a
+     * particular bet costs must ask {@link BetLimits#minimumFor} instead.
+     */
     @Override
     public long minimumBet() {
-        return minimumBet;
-    }
-
-    /**
-     * The table maximum. Essential for a house-banked game: without a cap, a
-     * single lucky straight-up bet can drain the house balance and mint
-     * credits out of nothing.
-     */
-    public long maximumBet() {
-        return maximumBet;
-    }
-
-    public RouletteWheel wheel() {
-        return wheel;
-    }
-
-    /**
-     * The worst case this table can cost the house on one spin, per seat.
-     * The platform layer should refuse to open a table whose house balance
-     * cannot cover this.
-     */
-    public long maximumExposurePerSeat() {
-        return maximumBet * (BetType.STRAIGHT_UP.payoutRatio() + 1L);
+        return Math.min(limits.insideMinimum(), limits.outsideMinimum());
     }
 
     @Override
     public GameSession createSession(List<Seat> seats, RandomGenerator random) {
+        return createSession(seats, random, limits);
+    }
+
+    /**
+     * Creates a session bound to one table's limits.
+     * <p>
+     * The platform layer calls this, because the numbers a table posts are
+     * the numbers the rules have to enforce. Building the session from the
+     * game's own defaults instead left the two layers disagreeing about what
+     * was legal: the block took a wager under its configured minimum, and the
+     * session refused the same wager at the spin, which drops a stake that a
+     * player watched being accepted.
+     */
+    public GameSession createSession(List<Seat> seats, RandomGenerator random,
+                                     BetLimits tableLimits) {
         if (!canStartWith(seats.size())) {
             throw new IllegalArgumentException(
                     "Roulette needs " + minPlayers() + " to " + maxPlayers()
                             + " players, got " + seats.size());
         }
-        return new RouletteSession(seats, random, wheel, minimumBet, maximumBet);
+        return new RouletteSession(seats, random, wheel, tableLimits);
     }
 }

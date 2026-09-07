@@ -51,7 +51,7 @@ public record TransactionRecord(long sequence, String timestamp, TransactionType
                 owner.toString(),
                 Long.toString(delta),
                 Long.toString(balance),
-                sanitise(detail));
+                sanitize(detail));
     }
 
     /**
@@ -88,7 +88,7 @@ public record TransactionRecord(long sequence, String timestamp, TransactionType
         }
     }
 
-    private static String sanitise(String text) {
+    private static String sanitize(String text) {
         return text.replace(SEPARATOR, ' ').replace('\n', ' ').replace('\r', ' ');
     }
 }

@@ -10,7 +10,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
@@ -90,6 +92,26 @@ public class TableBlock extends BaseEntityBlock {
     @Override
     public BlockEntity newBlockEntity(@NotNull BlockPos pos, @NotNull BlockState state) {
         return new TableBlockEntity(pos, state);
+    }
+
+    /**
+     * Remembers who put the table down.
+     * <p>
+     * That is what lets somebody set up a table in their own base without an
+     * operator having to come over and choose the game for them. A table
+     * placed by anything that is not a player keeps no owner and stays
+     * operator business.
+     */
+    @Override
+    public void setPlacedBy(@NotNull Level level, @NotNull BlockPos pos, @NotNull BlockState state,
+                            @Nullable LivingEntity placer, @NotNull ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (level.isClientSide || !(placer instanceof Player player)) {
+            return;
+        }
+        if (level.getBlockEntity(pos) instanceof TableBlockEntity table) {
+            table.claim(player.getUUID());
+        }
     }
 
     /**

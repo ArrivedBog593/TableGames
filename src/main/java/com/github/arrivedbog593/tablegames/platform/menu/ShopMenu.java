@@ -2,6 +2,7 @@ package com.github.arrivedbog593.tablegames.platform.menu;
 
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
+import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.github.arrivedbog593.tablegames.platform.economy.ShopEntry;
 import com.github.arrivedbog593.tablegames.platform.economy.ShopExchange;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlocks;
@@ -35,7 +36,7 @@ import java.util.Optional;
  */
 public class ShopMenu extends AbstractContainerMenu {
 
-     /**
+    /**
      * Offsets a shop entry's number to say "buy one of this".
      * <p>
      * Far enough apart that a number can never reach the next band. A
@@ -56,6 +57,18 @@ public class ShopMenu extends AbstractContainerMenu {
     private final DataSlot balanceHigh = DataSlot.standalone();
 
     /**
+     * What the player has riding on a round that has not settled.
+     * <p>
+     * Sent because the screen cannot work it out and cannot be told any other
+     * way. Wagers are not debited when they are placed, so a balance of a
+     * thousand with a thousand on the felt buys nothing — and a shop that
+     * drew those items as affordable and then refused the click without a
+     * word looked broken rather than correct.
+     */
+    private final DataSlot committedLow = DataSlot.standalone();
+    private final DataSlot committedHigh = DataSlot.standalone();
+
+    /**
      * Panel geometry, shared with the screen.
      * <p>
      * Slots are positioned here and drawn there, so the two have to agree.
@@ -63,12 +76,14 @@ public class ShopMenu extends AbstractContainerMenu {
      * can read them; the reverse would have the server importing client code.
      */
     public static final int PANEL_WIDTH = 220;
-    // Six pixels taller than the old textured panel, to clear the row of
-    // controls that now sits above the catalog. Height is free once the frame
-    // is drawn instead of blitted.
-    public static final int PANEL_HEIGHT = 213;
-    public static final int INVENTORY_Y = 130;
-    public static final int HOTBAR_Y = 188;
+    // Taller than the old textured panel: once to clear the row of controls
+    // above the catalog, and again by eleven for the balance, which now has a
+    // row to itself rather than sharing the title's. Height is free once the
+    // frame is drawn instead of blitted, which is the whole reason the layout
+    // can keep answering questions like this one with a row.
+    public static final int PANEL_HEIGHT = 224;
+    public static final int INVENTORY_Y = 141;
+    public static final int HOTBAR_Y = 199;
 
     /** Client-side constructor: reads the block position the server wrote. */
     public ShopMenu(int containerId, Inventory inventory, FriendlyByteBuf buffer) {
@@ -99,12 +114,29 @@ public class ShopMenu extends AbstractContainerMenu {
 
         addDataSlot(balanceLow);
         addDataSlot(balanceHigh);
+        addDataSlot(committedLow);
+        addDataSlot(committedHigh);
         refreshBalance();
     }
 
     /** The player's balance, reassembled from its two halves. */
     public long balance() {
         return ((long) balanceHigh.get() << 32) | (balanceLow.get() & 0xFFFFFFFFL);
+    }
+
+    /** What of that balance is already promised to a live round. */
+    public long committed() {
+        return ((long) committedHigh.get() << 32) | (committedLow.get() & 0xFFFFFFFFL);
+    }
+
+    /**
+     * What the player can actually spend here.
+     * <p>
+     * What every price comparison on the screen has to use. Comparing against
+     * the balance draws a chip a player cannot buy as though they could.
+     */
+    public long spendable() {
+        return Math.max(0L, balance() - committed());
     }
 
     private boolean isServerSide() {
@@ -118,6 +150,10 @@ public class ShopMenu extends AbstractContainerMenu {
         long balance = storage().balanceOf(player.getUUID());
         balanceLow.set((int) (balance & 0xFFFFFFFFL));
         balanceHigh.set((int) (balance >> 32));
+
+        long committed = OutcomeSettler.stakes().committedBy(player.getUUID());
+        committedLow.set((int) (committed & 0xFFFFFFFFL));
+        committedHigh.set((int) (committed >> 32));
     }
 
     private CreditStorage storage() {

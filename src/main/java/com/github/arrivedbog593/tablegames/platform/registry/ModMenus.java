@@ -1,6 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.registry;
 
 import com.github.arrivedbog593.tablegames.TableGames;
+import com.github.arrivedbog593.tablegames.platform.menu.AdminCashierMenu;
 import com.github.arrivedbog593.tablegames.platform.menu.AdminShopMenu;
 import com.github.arrivedbog593.tablegames.platform.menu.CashierMenu;
 import com.github.arrivedbog593.tablegames.platform.menu.ShopMenu;
@@ -41,6 +42,13 @@ public final class ModMenus {
      */
     public static final DeferredHolder<MenuType<?>, MenuType<AdminShopMenu>> ADMIN_SHOP =
             MENUS.register("admin_shop", () -> IMenuTypeExtension.create(AdminShopMenu::new));
+
+    /**
+     * Configuring the cashier. A menu for the same reason as the shop: an
+     * administrator names an item by putting one in a slot.
+     */
+    public static final DeferredHolder<MenuType<?>, MenuType<AdminCashierMenu>> ADMIN_CASHIER =
+            MENUS.register("admin_cashier", () -> IMenuTypeExtension.create(AdminCashierMenu::new));
 
     private ModMenus() {
     }

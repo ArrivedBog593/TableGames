@@ -8,7 +8,6 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
@@ -27,11 +26,16 @@ import java.util.List;
  * the same: an admin arranging a shop should be looking at what a customer
  * will, not at a different rendering of the same list.
  * <p>
- * One button rather than three. With nothing selected it lists whatever is in
- * the slot; with an entry selected it reprices that entry. Removing is a
- * shift click on the entry itself, where the thing being removed is under the
- * cursor — a Remove button and a selection are two places to look for the
- * answer to "which one".
+ * The top button does one thing at a time. With nothing selected it lists
+ * whatever is in the slot; with an entry selected it reprices that entry.
+ * <p>
+ * Removing used to be a shift click on the entry itself, on the argument that
+ * a button and a selection are two places to look for the answer to "which
+ * one". The selection turned out to answer that on its own — the chosen entry
+ * is the highlighted one, and it is highlighted while the button is on screen
+ * — and a modifier nobody is told about is not much of a safeguard anyway.
+ * The button asks for a second click instead, which guards the same accident
+ * out loud.
  */
 public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
 
@@ -57,6 +61,18 @@ public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
     private static final int ACTION_X = 128;
     private static final int ACTION_W = 84;
 
+    /** The remove button, directly under the action button. */
+    private static final int REMOVE_Y = ACTION_Y + 18;
+
+    /**
+     * How long the remove button stays armed after the first click.
+     * <p>
+     * Long enough to move the mouse a few pixels and click again, short
+     * enough that a button left armed and forgotten disarms itself before it
+     * can be hit by accident.
+     */
+    private static final long CONFIRM_MILLIS = 3_000;
+
     /** Nothing selected. The button lists whatever is in the slot. */
     private static final int NO_SELECTION = 0;
 
@@ -64,6 +80,20 @@ public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
 
     /** The catalog number being edited, or {@link #NO_SELECTION}. */
     private int selected = NO_SELECTION;
+
+    /**
+     * The catalog this screen last drew, compared by identity.
+     * <p>
+     * The holder hands out a new list for every packet the server sends, so a
+     * different instance means the shop changed underneath. That matters
+     * because a selection is a catalog number and numbers move: with entry
+     * three gone, a selection made on entry four now points at what used to
+     * be five, and the reprice button would quietly change the wrong item.
+     */
+    private List<ShopCatalogPayload.Entry> lastSeen = List.of();
+
+    /** When the armed remove button goes back to being harmless. */
+    private long confirmUntil;
 
     private final CatalogView<ShopCatalogPayload.Entry> catalog =
             new CatalogView<>(ShopCatalogPayload.Entry::stack,
@@ -147,7 +177,18 @@ public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
     }
 
     private void renderCatalog(GuiGraphics graphics, int mouseX, int mouseY) {
-        catalog.accept(ClientShopState.entries());
+        List<ShopCatalogPayload.Entry> incoming = ClientShopState.entries();
+        if (incoming != lastSeen) {
+            lastSeen = incoming;
+            // Cheaper to lose a selection than to reprice the wrong item. It
+            // costs this administrator a click when somebody else edits
+            // mid-typing, and it costs nothing at all when the change was their
+            // own, since every action here clears the selection anyway.
+            selected = NO_SELECTION;
+            price.setValue("");
+            confirmUntil = 0;
+        }
+        catalog.accept(incoming);
         List<ShopCatalogPayload.Entry> entries = catalog.entries();
 
         if (entries.isEmpty()) {
@@ -262,6 +303,36 @@ public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
         if (price != null) {
             price.render(graphics, mouseX, mouseY, 0f);
         }
+
+        drawRemoveButton(graphics, mouseX, mouseY);
+    }
+
+    /**
+     * Drawn only with an entry selected, since there is nothing else it could
+     * remove, and red once armed so that the second click is plainly different
+     * from the first.
+     */
+    private void drawRemoveButton(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (selected == NO_SELECTION) {
+            return;
+        }
+        int x = leftPos + ACTION_X;
+        int y = topPos + REMOVE_Y;
+        boolean armed = isArmed();
+        boolean hovered = isOver(mouseX, mouseY, x, y, ACTION_W, SEARCH_H);
+        drawControl(graphics, x, y, ACTION_W, Panels.OUTLINE,
+                armed ? 0xFFB71C1C : 0xFF6D4C41, hovered);
+
+        Component label = Component.translatable(armed
+                ? "tablegames.admin.shop.remove_confirm"
+                : "tablegames.admin.shop.remove");
+        graphics.drawString(font, label, x + (ACTION_W - font.width(label)) / 2,
+                y + TEXT_Y, 0xFFFFFFFF, false);
+    }
+
+    /** Whether the remove button is waiting for its second click. */
+    private boolean isArmed() {
+        return System.currentTimeMillis() < confirmUntil;
     }
 
     /** Whether the action button would do anything if pressed. */
@@ -310,6 +381,18 @@ public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
             lines.add(Component.translatable(selected == NO_SELECTION
                             ? "tablegames.admin.shop.add_hint"
                             : "tablegames.admin.shop.set_price_hint")
+                    .withStyle(ChatFormatting.GRAY));
+            graphics.renderComponentTooltip(font, lines, mouseX, mouseY);
+            return;
+        }
+
+        if (selected != NO_SELECTION && isOver(mouseX, mouseY,
+                leftPos + ACTION_X, topPos + REMOVE_Y, ACTION_W, SEARCH_H)) {
+            List<Component> lines = new ArrayList<>();
+            lines.add(Component.translatable(isArmed()
+                    ? "tablegames.admin.shop.remove_confirm"
+                    : "tablegames.admin.shop.remove"));
+            lines.add(Component.translatable("tablegames.admin.shop.remove_hint")
                     .withStyle(ChatFormatting.GRAY));
             graphics.renderComponentTooltip(font, lines, mouseX, mouseY);
             return;
@@ -364,7 +447,7 @@ public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
 
         if (focusField(search, leftPos + GRID_X, topPos + SEARCH_Y, SEARCH_W, mx, my, button)
                 || focusField(price, leftPos + PRICE_X, topPos + ACTION_Y,
-                        PRICE_W, mx, my, button)) {
+                PRICE_W, mx, my, button)) {
             return true;
         }
 
@@ -388,6 +471,11 @@ public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
             act();
             return true;
         }
+        if (selected != NO_SELECTION
+                && isOver(mx, my, leftPos + ACTION_X, topPos + REMOVE_Y, ACTION_W, SEARCH_H)) {
+            remove();
+            return true;
+        }
 
         if (button == 0 && clickedEntry(mx, my)) {
             return true;
@@ -409,13 +497,7 @@ public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
         return true;
     }
 
-    /**
-     * Selects an entry or removes it when shift is held.
-     * <p>
-     * Removing where the thing is, rather than through a button and a
-     * selection: two places to look for the answer to "which one" is one place
-     * too many when the answer is destructive.
-     */
+    /** Selects an entry or deselects it when it was already chosen. */
     private boolean clickedEntry(int mouseX, int mouseY) {
         List<ShopCatalogPayload.Entry> entries = catalog.entries();
         int first = scroll * COLUMNS;
@@ -430,19 +512,38 @@ public class AdminShopScreen extends AbstractContainerScreen<AdminShopMenu> {
                 continue;
             }
             ShopCatalogPayload.Entry entry = entries.get(index);
-            if (Screen.hasShiftDown()) {
-                PacketDistributor.sendToServer(AdminShopActionPayload.remove(entry.number()));
-                // Numbers shift when something is removed, so a selection
-                // made before this click no longer means what it did.
-                selected = NO_SELECTION;
-            } else {
-                selected = entry.number() == selected ? NO_SELECTION : entry.number();
-                price.setValue(selected == NO_SELECTION ? "" : String.valueOf(entry.price()));
-            }
+            selected = entry.number() == selected ? NO_SELECTION : entry.number();
+            price.setValue(selected == NO_SELECTION ? "" : String.valueOf(entry.price()));
+            // Changing the subject disarms the button. Otherwise, a click
+            // meant for one entry could land, armed, on the next.
+            confirmUntil = 0;
             playClick();
             return true;
         }
         return false;
+    }
+
+    /**
+     * Arms the remove button, then removes on the second click.
+     * <p>
+     * The removal is deliberately two clicks. Entry numbers are positions in
+     * a list, so deleting one moves every entry after it, and an accidental
+     * deletion is not undone by adding the item back.
+     */
+    private void remove() {
+        if (selected == NO_SELECTION) {
+            return;
+        }
+        if (!isArmed()) {
+            confirmUntil = System.currentTimeMillis() + CONFIRM_MILLIS;
+            playClick();
+            return;
+        }
+        PacketDistributor.sendToServer(AdminShopActionPayload.remove(selected));
+        selected = NO_SELECTION;
+        price.setValue("");
+        confirmUntil = 0;
+        playClick();
     }
 
     private void act() {

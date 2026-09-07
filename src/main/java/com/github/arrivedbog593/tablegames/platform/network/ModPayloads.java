@@ -16,7 +16,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = TableGames.MOD_ID)
 public final class ModPayloads {
 
-    private static final String VERSION = "3";
+    private static final String VERSION = "6";
 
     private ModPayloads() {
     }
@@ -54,6 +54,16 @@ public final class ModPayloads {
                 AdminShopActionPayload.TYPE,
                 AdminShopActionPayload.STREAM_CODEC,
                 AdminShopActionPayload::handleOnServer);
+
+        registrar.playToServer(
+                AdminCashierActionPayload.TYPE,
+                AdminCashierActionPayload.STREAM_CODEC,
+                AdminCashierActionPayload::handleOnServer);
+
+        registrar.playToServer(
+                AdminCashierBatchPayload.TYPE,
+                AdminCashierBatchPayload.STREAM_CODEC,
+                AdminCashierBatchPayload::handleOnServer);
 
         registrar.playToServer(
                 TableActionPayload.TYPE,

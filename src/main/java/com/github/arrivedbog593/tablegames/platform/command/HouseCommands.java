@@ -100,8 +100,19 @@ public final class HouseCommands {
                 "tablegames.house.balance", format(bankroll.balance())).withStyle(color), false);
 
         if (!bankroll.isOpen()) {
-            source.sendSuccess(() -> Component.translatable(
-                            "tablegames.house.closed", format(bankroll.minimumReserve()))
+            // Two ways to be closed and two things to do about it. Below the
+            // operator's own floor, the answer is to put credits in. Below
+            // what the tables are holding, the answer is to wait for the
+            // rounds in flight to settle — and printing the same line for
+            // both would have somebody funding a bank that was about to
+            // recover on its own.
+            boolean owedMoreThanItHolds =
+                    bankroll.minimumReserve() > EconomyData.get(source.getServer())
+                            .minimumReserve();
+            source.sendSuccess(() -> Component.translatable(owedMoreThanItHolds
+                                    ? "tablegames.house.closed_committed"
+                                    : "tablegames.house.closed",
+                            format(bankroll.minimumReserve()))
                     .withStyle(ChatFormatting.RED), false);
             return 0;
         }
@@ -151,6 +162,22 @@ public final class HouseCommands {
 
     private static int take(CommandSourceStack source, long amount) {
         CreditStorage storage = CreditStorage.get(source.getServer());
+
+        // Not below what the tables are holding. Those credits are promised
+        // to spins that have not landed yet, and taking them leaves the house
+        // owing money it no longer has: the settlement audit then refuses to
+        // pay a winner and the whole round is handed back. Closing new bets
+        // was never going to be enough on its own, because it is this
+        // withdrawal that creates the shortfall.
+        long committed = OutcomeSettler.exposure().total();
+        long takeable = Math.max(0L, storage.houseBalance() - committed);
+        if (amount > takeable) {
+            source.sendFailure(Component.translatable(
+                    "tablegames.house.cannot_take_committed",
+                    format(committed), format(takeable)));
+            return 0;
+        }
+
         if (!storage.debitHouse(amount)) {
             source.sendFailure(Component.translatable(
                     "tablegames.house.cannot_take", format(storage.houseBalance())));

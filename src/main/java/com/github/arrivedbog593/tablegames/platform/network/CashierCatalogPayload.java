@@ -42,15 +42,21 @@ public record CashierCatalogPayload(List<Entry> entries) implements CustomPacket
      * to a button that buys one, which is the single place a wrong number
      * does the most damage.
      *
-     * @param itemId  what is being priced
-     * @param value   credits paid for handing one in
-     * @param buyback credits charged for taking one out, surcharge included
+     * @param itemId       what is being priced
+     * @param value        credits paid for handing one in
+     * @param buyback      credits charged for taking one out, surcharge
+     *                     included
+     * @param fromDatapack whether the price came from a datapack rather than
+     *                     from an operator. The customer's screen has no use
+     *                     for this; the administration screen does, since a
+     *                     datapack price cannot be removed, only overridden
      */
-    public record Entry(String itemId, long value, long buyback) {
+    public record Entry(String itemId, long value, long buyback, boolean fromDatapack) {
         public static final StreamCodec<ByteBuf, Entry> STREAM_CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, Entry::itemId,
                 ByteBufCodecs.VAR_LONG, Entry::value,
                 ByteBufCodecs.VAR_LONG, Entry::buyback,
+                ByteBufCodecs.BOOL, Entry::fromDatapack,
                 Entry::new);
     }
 
@@ -69,8 +75,9 @@ public record CashierCatalogPayload(List<Entry> entries) implements CustomPacket
         List<Entry> entries = new ArrayList<>();
         var table = EconomyEvents.economy().table();
         for (String itemId : table.itemIds()) {
-            table.valueOf(itemId).ifPresent(value ->
-                    entries.add(new Entry(itemId, value, table.buybackUnit(itemId))));
+            table.valueOf(itemId).ifPresent(value -> entries.add(new Entry(
+                    itemId, value, table.buybackUnit(itemId),
+                    EconomyEvents.economy().isFromDatapack(itemId))));
         }
         entries.sort(Comparator
                 .comparingLong(Entry::value).reversed()

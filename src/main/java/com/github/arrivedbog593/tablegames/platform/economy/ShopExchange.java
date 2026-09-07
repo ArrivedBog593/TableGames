@@ -63,16 +63,31 @@ public final class ShopExchange {
             return Result.failed("tablegames.shop.not_for_sale");
         }
 
+        // Spendable, not balance. Wagers are not debited when they are
+        // placed, so the balance still counts credits that are already riding
+        // on a spin. Selling against those was a way of cancelling a wager
+        // after betting had closed: buy an item with the same credits, watch
+        // the round, drop a stake it could no longer cover, sell the item
+        // back.
         long balance = storage.balanceOf(player.getUUID());
+        long spendable = OutcomeSettler.stakes().spendable(player.getUUID(), balance);
         long cost;
         try {
             cost = Math.multiplyExact(count, unitPrice);
         } catch (ArithmeticException absurd) {
             return Result.shortOf("tablegames.shop.cannot_afford",
-                    balance / unitPrice, Long.MAX_VALUE);
+                    spendable / unitPrice, Long.MAX_VALUE);
         }
-        if (cost > balance) {
-            return Result.shortOf("tablegames.shop.cannot_afford", balance / unitPrice, cost);
+        if (cost > spendable) {
+            // Two different problems and two different answers. Being short
+            // of credits is the player's own business; being short only
+            // because of a live wager is something they cannot see, and
+            // saying "not enough credits" while the balance clearly says
+            // otherwise reads as a bug.
+            return Result.shortOf(cost <= balance
+                            ? "tablegames.shop.credits_on_a_table"
+                            : "tablegames.shop.cannot_afford",
+                    spendable / unitPrice, cost);
         }
 
         ItemStack prototype = entry.prototype();
