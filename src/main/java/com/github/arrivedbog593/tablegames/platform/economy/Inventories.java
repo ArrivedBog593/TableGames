@@ -40,18 +40,97 @@ final class Inventories {
      * and the shop now sells stacks that carry components.
      */
     static long spaceFor(ServerPlayer player, ItemStack prototype) {
-        int maxStack = prototype.getMaxStackSize();
-        long room = 0;
-        for (int slot = 0; slot < player.getInventory().items.size(); slot++) {
-            ItemStack existing = player.getInventory().items.get(slot);
-            if (existing.isEmpty()) {
-                room += maxStack;
-            } else if (ItemStack.isSameItemSameComponents(existing, prototype)
-                    && existing.getCount() < maxStack) {
-                room += maxStack - existing.getCount();
-            }
+        return snapshot(player).roomFor(prototype);
+    }
+
+    /**
+     * A working copy of the inventory, for deciding whether several
+     * deliveries fit together.
+     * <p>
+     * One item at a time is not enough once a purchase can name more than
+     * one. A player with three free slots asking for sixty-four diamonds,
+     * sixty-four emeralds, and sixty-four ingots passes every check taken
+     * separately and fails the only one that matters, because the diamonds
+     * take the slots the emeralds were counting on. Reserving against a
+     * snapshot makes each line see what the lines before it already claimed.
+     * <p>
+     * A copy, so nothing here can move a real item. The real delivery still
+     * goes through {@link #give}, and only once every line has been reserved.
+     */
+    static Space snapshot(ServerPlayer player) {
+        List<ItemStack> slots = new ArrayList<>();
+        for (ItemStack existing : player.getInventory().items) {
+            slots.add(existing.copy());
         }
-        return room;
+        return new Space(slots);
+    }
+
+    /** The working copy itself. Not thread safe, and server thread only. */
+    static final class Space {
+
+        private final List<ItemStack> slots;
+
+        private Space(List<ItemStack> slots) {
+            this.slots = slots;
+        }
+
+        /** How many more of this would fit, given everything reserved so far. */
+        long roomFor(ItemStack prototype) {
+            int maxStack = prototype.getMaxStackSize();
+            long room = 0;
+            for (ItemStack existing : slots) {
+                if (existing.isEmpty()) {
+                    room += maxStack;
+                } else if (ItemStack.isSameItemSameComponents(existing, prototype)
+                        && existing.getCount() < maxStack) {
+                    room += maxStack - existing.getCount();
+                }
+            }
+            return room;
+        }
+
+        /**
+         * Claims space for a delivery.
+         * <p>
+         * Fills partial stacks before opening empty slots, which is the order
+         * {@link net.minecraft.world.entity.player.Inventory#add} uses. Getting
+         * that order wrong would undercount the room a player really has and
+         * refuse purchases that would have fitted.
+         *
+         * @return how many were reserved; less than asked means it does not fit
+         */
+        long reserve(ItemStack prototype, long count) {
+            int maxStack = prototype.getMaxStackSize();
+            long left = count;
+
+            for (int slot = 0; slot < slots.size() && left > 0; slot++) {
+                ItemStack existing = slots.get(slot);
+                if (existing.isEmpty()
+                        || !ItemStack.isSameItemSameComponents(existing, prototype)) {
+                    continue;
+                }
+                int free = maxStack - existing.getCount();
+                if (free <= 0) {
+                    continue;
+                }
+                int taken = (int) Math.min(left, free);
+                existing.grow(taken);
+                left -= taken;
+            }
+
+            for (int slot = 0; slot < slots.size() && left > 0; slot++) {
+                if (!slots.get(slot).isEmpty()) {
+                    continue;
+                }
+                int taken = (int) Math.min(left, maxStack);
+                ItemStack placed = prototype.copy();
+                placed.setCount(taken);
+                slots.set(slot, placed);
+                left -= taken;
+            }
+
+            return count - left;
+        }
     }
 
     /**

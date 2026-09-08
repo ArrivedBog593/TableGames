@@ -36,6 +36,27 @@ public final class ScreenPreferences {
     private static CatalogView.SortBy shopSort = CatalogView.SortBy.NUMBER;
     private static boolean shopSortDescending;
 
+    /**
+     * The cashier's own arrangement, kept apart from the shop's.
+     * <p>
+     * Two lists of different things. The shop is arranged by hand and reads
+     * naturally in the order an administrator built it; the cashier is a
+     * price table with no order of its own, so it starts sorted by price with
+     * the dearest first — which is what the server already sends, and so what
+     * players have always seen there.
+     */
+    private static CatalogView.SortBy cashierSort = CatalogView.SortBy.PRICE;
+    private static boolean cashierSortDescending = true;
+
+    /**
+     * Which side of the cashier's spread the grid was last quoting.
+     * <p>
+     * Buying by default, because that is what the grid does. Somebody who
+     * flipped it to check what selling pays usually wants it to stay flipped
+     * while they work through a stack of things to check.
+     */
+    private static boolean cashierShowSalePrice;
+
     public static CatalogView.SortBy shopSort() {
         return shopSort;
     }
@@ -47,6 +68,27 @@ public final class ScreenPreferences {
     public static void setShopSort(CatalogView.SortBy sortBy, boolean descending) {
         shopSort = sortBy;
         shopSortDescending = descending;
+    }
+
+    public static CatalogView.SortBy cashierSort() {
+        return cashierSort;
+    }
+
+    public static boolean cashierSortDescending() {
+        return cashierSortDescending;
+    }
+
+    public static void setCashierSort(CatalogView.SortBy sortBy, boolean descending) {
+        cashierSort = sortBy;
+        cashierSortDescending = descending;
+    }
+
+    public static boolean cashierShowSalePrice() {
+        return cashierShowSalePrice;
+    }
+
+    public static void setCashierShowSalePrice(boolean showSalePrice) {
+        cashierShowSalePrice = showSalePrice;
     }
 
     /** Whether a reopened screen should restore what was last searched for. */

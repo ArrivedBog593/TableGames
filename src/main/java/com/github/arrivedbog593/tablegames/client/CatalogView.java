@@ -17,12 +17,13 @@ import java.util.function.Function;
  * arranged is nobody else's business and does not belong in a packet. Nothing
  * here can desynchronize, because there is nothing to synchronize.
  * <p>
- * That is only safe because a purchase quotes the entry's catalog number, not
- * the row it was drawn in. The two stopped being the same thing the moment
- * this existed, and the server never learns the difference.
+ * That is only safe because a purchase quotes the entry's own identity — a
+ * catalog number in the shop, an item id at the cashier — and never the row
+ * it was drawn in. The two stopped being the same thing the moment this
+ * existed, and the server never learns the difference.
  * <p>
- * Written against a generic entry so the player's shop screen and the admin
- * screen can share it rather than growing two subtly different sort orders.
+ * Written against a generic entry so the player's screens and the admin
+ * screens can share it rather than growing four subtly different sort orders.
  *
  * @param <T> whatever the screen is listing
  */
@@ -35,11 +36,6 @@ public final class CatalogView<T> {
         PRICE,
         NAME;
 
-        public SortBy next() {
-            SortBy[] all = values();
-            return all[(ordinal() + 1) % all.length];
-        }
-
         public Component label() {
             return Component.translatable(
                     "tablegames.sort." + name().toLowerCase(Locale.ROOT));
@@ -49,16 +45,44 @@ public final class CatalogView<T> {
     private final Function<T, ItemStack> stackOf;
     private final Function<T, Long> priceOf;
 
+    /**
+     * The orders this particular catalog can be put in.
+     * <p>
+     * Not every list has everyone. The cashier prices by item id and has no
+     * catalog number at all, so offering "catalog order" there put a button
+     * on screen that named something the data does not have — and quietly did
+     * nothing, since the order it fell back to was the order the server
+     * happened to send.
+     */
+    private final List<SortBy> options;
+
     private List<T> source = List.of();
     private List<T> view = List.of();
 
-    private SortBy sortBy = SortBy.NUMBER;
+    private SortBy sortBy;
     private boolean descending;
     private String query = "";
 
+    /** A catalog that can be arranged every way there is. */
     public CatalogView(Function<T, ItemStack> stackOf, Function<T, Long> priceOf) {
+        this(stackOf, priceOf, List.of(SortBy.values()));
+    }
+
+    /**
+     * A catalog offering only some orders.
+     *
+     * @param options at least one, in the order the button cycles through
+     *                them. The first is what an unset preference falls back to
+     */
+    public CatalogView(Function<T, ItemStack> stackOf, Function<T, Long> priceOf,
+                       List<SortBy> options) {
+        if (options.isEmpty()) {
+            throw new IllegalArgumentException("A catalog needs at least one sort order");
+        }
         this.stackOf = stackOf;
         this.priceOf = priceOf;
+        this.options = List.copyOf(options);
+        this.sortBy = this.options.getFirst();
     }
 
     /** Replaces the underlying catalog, keeping the viewer's arrangement. */
@@ -84,31 +108,35 @@ public final class CatalogView<T> {
         return !query.isEmpty();
     }
 
-    public int hiddenCount() {
-        return source.size() - view.size();
-    }
-
     public SortBy sortBy() {
         return sortBy;
+    }
+
+    /** What the button cycles through, for a screen listing them in a tooltip. */
+    public List<SortBy> options() {
+        return options;
     }
 
     public boolean descending() {
         return descending;
     }
 
-    public String query() {
-        return query;
-    }
-
-    /** Restores an arrangement chosen the last time a screen was open. */
+    /**
+     * Restores an arrangement chosen the last time a screen was open.
+     * <p>
+     * An order this catalog does not offer falls back to the first one rather
+     * than being honored. Preferences are shared between screens that do not
+     * all list the same things, and a shop left in catalog order must not
+     * leave the cashier sorted by a number it has none of.
+     */
     public void restore(SortBy sortBy, boolean descending) {
-        this.sortBy = sortBy == null ? SortBy.NUMBER : sortBy;
+        this.sortBy = sortBy != null && options.contains(sortBy) ? sortBy : options.getFirst();
         this.descending = descending;
         rebuild();
     }
 
     public void cycleSort() {
-        sortBy = sortBy.next();
+        sortBy = options.get((options.indexOf(sortBy) + 1) % options.size());
         rebuild();
     }
 

@@ -7,7 +7,6 @@ import com.github.arrivedbog593.tablegames.platform.economy.EconomyEvents;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyManager;
 import com.github.arrivedbog593.tablegames.platform.economy.ItemIds;
 import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
-import com.github.arrivedbog593.tablegames.platform.network.CashierCatalogPayload;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlocks;
 import com.github.arrivedbog593.tablegames.platform.registry.ModMenus;
 import net.minecraft.core.BlockPos;
@@ -21,19 +20,20 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.inventory.DataSlot;
 import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
-
-import java.util.Optional;
 
 /**
  * The cashier's menu: a deposit tray, a balance, and a catalog to buy back
  * from.
  * <p>
- * Every action is validated on the server. The screen only draws and sends
- * button ids; it decides nothing. A client is free to claim anything, so
- * nothing it claims may move credits.
+ * Buying back does not happen here. It used to, through
+ * {@code clickMenuButton}, which carries a single {@code int} and so had room
+ * for a position in the catalog and nothing else. That position was never
+ * stable — the catalog is sent sorted by value, so repricing any one item
+ * reordered the whole list and a click already in flight arrived pointing
+ * somewhere else. Buybacks now arrive as {@code CashierRedeemPayload}, keyed
+ * by item id.
  * <p>
  * The deposit tray belongs to the menu, not the block. It is created when the
  * menu opens and emptied back into the player when it closes, so two people
@@ -45,20 +45,29 @@ import java.util.Optional;
  * a balance would overwrite the synced value with zero the moment anything
  * moved.
  */
-public class    CashierMenu extends AbstractContainerMenu {
+public class CashierMenu extends AbstractContainerMenu {
 
     public static final int DEPOSIT_ROWS = 3;
     public static final int DEPOSIT_COLUMNS = 3;
     public static final int DEPOSIT_SIZE = DEPOSIT_ROWS * DEPOSIT_COLUMNS;
 
-    /** Button id: convert everything in the tray. */
-    public static final int BUTTON_CONVERT = 0;
+    /**
+     * Panel geometry, shared with the screen.
+     * <p>
+     * Slots are positioned here and drawn there, so the two have to agree.
+     * The old numbers came from a texture that fixed the panel at 176 wide,
+     * which left nowhere to put a search field or a cart. Drawn from
+     * rectangles, the size is a layout decision.
+     */
+    public static final int PANEL_WIDTH = 340;
+    public static final int PANEL_HEIGHT = 284;
 
-    /** Button ids at or above this redeem one of the catalog entries (id - base). */
-    public static final int BUTTON_REDEEM_ONE = 1000;
+    /** The deposit tray, below the catalog rather than beside it. */
+    public static final int TRAY_X = 8;
+    public static final int TRAY_Y = 132;
 
-    /** Button ids at or above this redeem a full stack of entry (id - base). */
-    public static final int BUTTON_REDEEM_STACK = 2000;
+    public static final int INVENTORY_Y = 201;
+    public static final int HOTBAR_Y = 259;
 
     private final Container deposit = new SimpleContainer(DEPOSIT_SIZE) {
         @Override
@@ -106,18 +115,20 @@ public class    CashierMenu extends AbstractContainerMenu {
         for (int row = 0; row < DEPOSIT_ROWS; row++) {
             for (int column = 0; column < DEPOSIT_COLUMNS; column++) {
                 addSlot(new DepositSlot(deposit, column + row * DEPOSIT_COLUMNS,
-                        8 + column * 18, 28 + row * 18));
+                        TRAY_X + column * 18, TRAY_Y + row * 18));
             }
         }
 
+        // Centered under a panel that is no longer a fixed 176 wide.
+        int inventoryLeft = (PANEL_WIDTH - 9 * 18) / 2;
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 9; column++) {
                 addSlot(new Slot(inventory, column + row * 9 + 9,
-                        8 + column * 18, 122 + row * 18));
+                        inventoryLeft + column * 18, INVENTORY_Y + row * 18));
             }
         }
         for (int column = 0; column < 9; column++) {
-            addSlot(new Slot(inventory, column, 8 + column * 18, 180));
+            addSlot(new Slot(inventory, column, inventoryLeft + column * 18, HOTBAR_Y));
         }
 
         addDataSlot(balanceLow);
@@ -195,44 +206,63 @@ public class    CashierMenu extends AbstractContainerMenu {
         if (container != deposit || !isServerSide()) {
             return;
         }
+        depositValue.set((int) trayValue());
+    }
+
+    /**
+     * What the tray is worth, clamped the way the data slot carries it.
+     * <p>
+     * Clamped in one place rather than at each caller, so what the screen was
+     * shown and what a conversion is checked against is the same number by
+     * construction.
+     */
+    private long trayValue() {
         EconomyManager economy = EconomyEvents.economy();
         long total = 0;
         for (int i = 0; i < deposit.getContainerSize(); i++) {
             total += economy.valueOf(deposit.getItem(i)).orElse(0L);
         }
-        // Clamped because a data slot is an int; the tray cannot hold anything
-        // like that much anyway.
-        depositValue.set((int) Math.min(Integer.MAX_VALUE, total));
+        return Math.min(Integer.MAX_VALUE, total);
     }
 
     // --- Actions ---------------------------------------------------------------
 
-    @Override
-    public boolean clickMenuButton(Player who, int id) {
-        if (who.level().isClientSide) {
-            return true;
-        }
-        if (!(who instanceof ServerPlayer serverPlayer)) {
-            return false;
-        }
-        CreditStorage storage = storage();
-        if (id == BUTTON_CONVERT) {
-            return convertTray(serverPlayer, storage);
-        }
-        if (id >= BUTTON_REDEEM_STACK) {
-            return redeem(serverPlayer, storage, id - BUTTON_REDEEM_STACK, true);
-        }
-        if (id >= BUTTON_REDEEM_ONE) {
-            return redeem(serverPlayer, storage, id - BUTTON_REDEEM_ONE, false);
-        }
-        return false;
+    /**
+     * The outcome of converting the tray.
+     *
+     * @param success    whether anything was converted
+     * @param failureKey translation key when nothing happened, else null
+     * @param credits    credits paid out
+     * @param expected   what the screen said the tray was worth
+     * @param actual     what it is worth now
+     */
+    public record ConvertResult(boolean success, String failureKey,
+                                long credits, long expected, long actual) {
     }
 
-    /** Turns everything in the tray into credits, slot by slot. */
-    private boolean convertTray(ServerPlayer who, CreditStorage storage) {
+    /**
+     * Turns everything in the tray into credits, slot by slot.
+     * <p>
+     * The figure on the screen was showing travels with the request and has to
+     * agree. Without it, an administrator revaluing an item while somebody
+     * had it sitting in the tray paid out whatever the new number was — the
+     * player watched "+1,234" and was handed something else, in whichever
+     * direction it moved. The window is short because the tray's value is a
+     * data slot that resyncs every tick, but short is not closed.
+     */
+    public ConvertResult convertTray(ServerPlayer who, long expectedValue) {
+        CreditStorage storage = storage();
+        long actual = trayValue();
+        if (actual <= 0) {
+            return new ConvertResult(false, "tablegames.cashier.tray_empty", 0, 0, 0);
+        }
+        if (actual != expectedValue) {
+            return new ConvertResult(false, "tablegames.cashier.tray_changed",
+                    0, expectedValue, actual);
+        }
+
         EconomyManager economy = EconomyEvents.economy();
         long credits = 0;
-
         for (int i = 0; i < deposit.getContainerSize(); i++) {
             ItemStack stack = deposit.getItem(i);
             if (stack.isEmpty()) {
@@ -254,43 +284,14 @@ public class    CashierMenu extends AbstractContainerMenu {
         }
 
         if (credits == 0) {
-            return false;
+            // Every slot refused, which the value check above should have
+            // caught. Reported rather than swallowed.
+            return new ConvertResult(false, "tablegames.cashier.tray_empty", 0, 0, 0);
         }
         deposit.setChanged();
         refreshBalance();
         broadcastChanges();
-        return true;
-    }
-
-    /** Buys back one, or a stack, of a catalog entry. */
-    private boolean redeem(ServerPlayer who, CreditStorage storage,
-                           int entryIndex, boolean wholeStack) {
-        var catalog = CashierCatalogPayload.current().entries();
-        if (entryIndex < 0 || entryIndex >= catalog.size()) {
-            return false;
-        }
-        String itemId = catalog.get(entryIndex).itemId();
-        Optional<Item> item = ItemIds.item(itemId);
-        if (item.isEmpty()) {
-            return false;
-        }
-
-        long wanted = wholeStack ? new ItemStack(item.get()).getMaxStackSize() : 1;
-        CreditExchange.Result result = CreditExchange.redeemExactly(
-                who, item.get(), wanted, EconomyEvents.economy(), storage);
-
-        if (!result.success()) {
-            // Quietly redeeming fewer would spend credits the player did not
-            // agree to spend, so a refusal stays a refusal.
-            return false;
-        }
-
-        EconomyEvents.record(storage, TransactionType.CONVERT_OUT, who.getUUID(),
-                -result.credits(), storage.balanceOf(who.getUUID()),
-                result.itemCount() + "x " + itemId + " (cashier)");
-        refreshBalance();
-        broadcastChanges();
-        return true;
+        return new ConvertResult(true, null, credits, expectedValue, actual);
     }
 
     // --- Housekeeping -----------------------------------------------------------
@@ -298,6 +299,17 @@ public class    CashierMenu extends AbstractContainerMenu {
     @Override
     public void broadcastChanges() {
         refreshBalance();
+        // The tray's worth is recomputed here and not only when an item
+        // moves. Prices change under a tray nobody is touching — an
+        // administrator revalues an item while somebody stands at the
+        // cashier — and the figure used to sit at whatever it was when the
+        // last item was dropped in, for as long as the screen stayed open.
+        // Since the conversion now checks that figure, a stale one did not
+        // merely mislead: it made the tray impossible to convert at all.
+        // Nine slots a tick is nothing next to that.
+        if (isServerSide()) {
+            depositValue.set((int) trayValue());
+        }
         super.broadcastChanges();
     }
 

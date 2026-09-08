@@ -1,15 +1,11 @@
 package com.github.arrivedbog593.tablegames.platform.menu;
 
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
-import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
-import com.github.arrivedbog593.tablegames.platform.economy.ShopEntry;
-import com.github.arrivedbog593.tablegames.platform.economy.ShopExchange;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlocks;
 import com.github.arrivedbog593.tablegames.platform.registry.ModMenus;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -19,35 +15,23 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Optional;
-
 /**
  * The shop's menu: a balance, a catalog, and the player's own inventory.
  * <p>
  * No slots of its own. Nothing is deposited here — items only ever leave the
  * shop — so there is no tray to guard and nothing to hand back on close.
  * <p>
- * Prices are read from the live table on every purchase, never from what the
- * client sent. A client is free to claim an item costs one credit; the server
- * is not obliged to believe it.
+ * Buying does not happen here. It used to, through {@code clickMenuButton},
+ * which carries a single {@code int} and so had room for an entry number and
+ * nothing else — no quantity, and no way to say what price the screen was
+ * showing. Purchases now arrive as
+ * {@code ShopPurchasePayload}, and this class is left holding what a menu is
+ * actually for: slots and synchronized numbers.
  * <p>
  * Data slots are written on the server only, since the client's copy of this
  * class has no access to the credit store and would zero them.
  */
 public class ShopMenu extends AbstractContainerMenu {
-
-    /**
-     * Offsets a shop entry's number to say "buy one of this".
-     * <p>
-     * Far enough apart that a number can never reach the next band. A
-     * catalog that large is a mistake rather than a shop, but the cost of the
-     * headroom is nothing, and the failure without it would be silent: asking
-     * for one and being sold a stack.
-     */
-    public static final int BUTTON_BUY_ONE = 1_000_000;
-
-    /** Button ids at or above this buy a full stack of entry (id - base). */
-    public static final int BUTTON_BUY_STACK = 2_000_000;
 
     private final ContainerLevelAccess access;
     private final Player player;
@@ -74,16 +58,23 @@ public class ShopMenu extends AbstractContainerMenu {
      * Slots are positioned here and drawn there, so the two have to agree.
      * Keeping the numbers on the side that owns the slots means the screen
      * can read them; the reverse would have the server importing client code.
+     * <p>
+     * Wider than it was because the cart needs a column of its own. Putting
+     * it under the grid instead would have pushed the inventory far enough
+     * down to matter at large GUI scales, and width is the cheaper of the two:
+     * a panel three hundred and forty wide still fits comfortably on a screen
+     * that a three-hundred-tall one does not.
      */
-    public static final int PANEL_WIDTH = 220;
+    public static final int PANEL_WIDTH = 340;
     // Taller than the old textured panel: once to clear the row of controls
-    // above the catalog, and again by eleven for the balance, which now has a
-    // row to itself rather than sharing the title's. Height is free once the
-    // frame is drawn instead of blitted, which is the whole reason the layout
-    // can keep answering questions like this one with a row.
-    public static final int PANEL_HEIGHT = 224;
-    public static final int INVENTORY_Y = 141;
-    public static final int HOTBAR_Y = 199;
+    // above the catalog, again by eleven for the balance, which now has a row
+    // to itself rather than sharing the title's, and again for the two extra
+    // grid rows the cart column left room for. Height is free once the frame
+    // is drawn instead of blitted, which is the whole reason the layout can
+    // keep answering questions like this one with a row.
+    public static final int PANEL_HEIGHT = 264;
+    public static final int INVENTORY_Y = 181;
+    public static final int HOTBAR_Y = 239;
 
     /** Client-side constructor: reads the block position the server wrote. */
     public ShopMenu(int containerId, Inventory inventory, FriendlyByteBuf buffer) {
@@ -158,60 +149,6 @@ public class ShopMenu extends AbstractContainerMenu {
 
     private CreditStorage storage() {
         return CreditStorage.get(player.level().getServer());
-    }
-
-    @Override
-    public boolean clickMenuButton(Player who, int id) {
-        if (who.level().isClientSide) {
-            return true;
-        }
-        if (!(who instanceof ServerPlayer serverPlayer)) {
-            return false;
-        }
-        if (id >= BUTTON_BUY_STACK) {
-            return buy(serverPlayer, storage(), id - BUTTON_BUY_STACK, true);
-        }
-        if (id >= BUTTON_BUY_ONE) {
-            return buy(serverPlayer, storage(), id - BUTTON_BUY_ONE, false);
-        }
-        return false;
-    }
-
-    /**
-     * Buys from the catalog.
-     * <p>
-     * The number is the entry's place in the catalog as the server sent it,
-     * not the row it happened to be drawn in — the screen sorts and filters
-     * locally, so those are rarely the same.
-     * <p>
-     * Everything about the purchase then comes from {@link EconomyData}, so a
-     * stale or tampered catalog cannot change what anything costs or what it
-     * delivers. A number that no longer points anywhere simply fails: the
-     * catalog can change while a screen is open, and buying whatever slid
-     * into that place would be worse than buying nothing.
-     */
-    private boolean buy(ServerPlayer who, CreditStorage storage,
-                        int number, boolean wholeStack) {
-        Optional<ShopEntry> entry = EconomyData.get(who.server).shopEntry(number);
-        if (entry.isEmpty()) {
-            return false;
-        }
-
-        long wanted = wholeStack
-                ? Math.max(1, entry.get().prototype().getMaxStackSize()
-                / Math.max(1, entry.get().count()))
-                : 1;
-        ShopExchange.Result result = ShopExchange.buy(who, entry.get(), wanted, storage);
-
-        if (!result.success()) {
-            // Quietly buying fewer than asked would spend credits the player
-            // did not agree to spend, so a refusal stays a refusal.
-            return false;
-        }
-
-        refreshBalance();
-        broadcastChanges();
-        return true;
     }
 
     @Override
