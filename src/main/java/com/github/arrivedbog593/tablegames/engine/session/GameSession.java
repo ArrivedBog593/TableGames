@@ -287,9 +287,13 @@ public abstract class GameSession {
         if (remaining > 0 && !seats.isEmpty()) {
             // Anything already swept goes back to the seats it came from is not
             // recoverable here, so split it evenly rather than destroy it.
+            // Integer division on a pot that does not divide evenly leaves a
+            // remainder, which the first seat absorbs rather than the table
+            // quietly keeping it.
             long share = remaining / seats.size();
-            for (Seat seat : seats) {
-                seat.award(share);
+            long remainder = remaining % seats.size();
+            for (int i = 0; i < seats.size(); i++) {
+                seats.get(i).award(i == 0 ? share + remainder : share);
             }
         }
         this.outcome = new Outcome(refunds, List.of(), 0, reasonKey);

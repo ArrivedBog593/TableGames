@@ -33,37 +33,11 @@ class CreditValueTableTest {
     void unlistedItemsCannotBeTradedAtAll() {
         CreditValueTable table = table();
         assertThrows(IllegalArgumentException.class, () -> table.creditsFor(DIRT, 1));
-        assertThrows(IllegalArgumentException.class, () -> table.itemsFor(DIRT, 100));
     }
 
     @Test
     void aStackConvertsAtTheUnitRate() {
         assertEquals(640, table().creditsFor(IRON, 64));
-    }
-
-    @Test
-    void conversionIsExactlyReversible() {
-        CreditValueTable table = table();
-        long credits = table.creditsFor(IRON, 37);
-        CreditValueTable.Purchase back = table.itemsFor(IRON, credits);
-
-        assertEquals(37, back.count(), "one to one conversion must round trip exactly");
-        assertEquals(0, back.remainder());
-    }
-
-    @Test
-    void leftoverCreditsStayWithThePlayer() {
-        CreditValueTable.Purchase purchase = table().itemsFor(DIAMOND, 1000);
-        assertEquals(9, purchase.count());
-        assertEquals(10, purchase.remainder(), "the remainder must never be swallowed");
-        assertEquals(1000, purchase.count() * 110 + purchase.remainder());
-    }
-
-    @Test
-    void tooFewCreditsBuysNothingAndKeepsEverything() {
-        CreditValueTable.Purchase purchase = table().itemsFor(DIAMOND, 50);
-        assertTrue(purchase.isEmpty());
-        assertEquals(50, purchase.remainder());
     }
 
     @Test

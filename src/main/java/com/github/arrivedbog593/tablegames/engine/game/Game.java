@@ -2,8 +2,11 @@ package com.github.arrivedbog593.tablegames.engine.game;
 
 import com.github.arrivedbog593.tablegames.engine.session.GameSession;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
+import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
+import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.random.RandomGenerator;
 
 /**
@@ -56,6 +59,32 @@ public interface Game {
     /** Smallest legal wager, in credits. Ignored when betting is off. */
     default long minimumBet() {
         return 0;
+    }
+
+    /**
+     * What a table hosting this game can be configured with, in the order a
+     * screen should offer it.
+     * <p>
+     * Empty by default, which is the honest answer for a game with nothing to
+     * decide. Ids must be prefixed with {@link #id()} so that two games
+     * asking for the same thing do not share one another's answers.
+     */
+    default List<SettingSpec> settings() {
+        return List.of();
+    }
+
+    /**
+     * Whatever is wrong with these settings taken together, as a translation
+     * key, or empty when they are usable.
+     * <p>
+     * Each setting already validates itself against its own bounds. This is
+     * for the rules that span two of them — a ceiling that may not sit below
+     * its own floor — which no single spec can see. Checked before a
+     * configuration is accepted, so a table never stores a set of numbers its
+     * own game would refuse to start on.
+     */
+    default Optional<String> settingsProblem(TableSettings settings) {
+        return Optional.empty();
     }
 
     /**

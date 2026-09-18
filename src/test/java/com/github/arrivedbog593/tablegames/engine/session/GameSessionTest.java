@@ -192,6 +192,51 @@ class GameSessionTest {
         }
     }
 
+    /** Antes unevenly, so cancelling has to split a pot that does not divide evenly. */
+    private static final class UnevenAnteSession extends GameSession {
+
+        UnevenAnteSession(List<Seat> seats, RandomGenerator random) {
+            super(seats, random);
+        }
+
+        @Override
+        protected void onBegin() {
+            long[] antes = {1, 1, 2};
+            List<Seat> seated = seats();
+            for (int i = 0; i < seated.size(); i++) {
+                seated.get(i).setStatus(SeatStatus.ACTIVE);
+                seated.get(i).wager(antes[i]);
+            }
+            collectBets();
+            setState(GameState.IN_PROGRESS);
+        }
+
+        @Override
+        public List<Action> legalActions(UUID playerId) {
+            return List.of();
+        }
+
+        @Override
+        protected ActionResult onAction(Seat seat, Action action) {
+            return ActionResult.illegalAction();
+        }
+    }
+
+    @Test
+    void cancellingAnUnevenPotLosesNothingToTruncation() {
+        UnevenAnteSession session = new UnevenAnteSession(List.of(
+                Seat.forPlayer(0, ALICE, 100),
+                Seat.forPlayer(1, BOB, 100),
+                Seat.forPlayer(2, CAROL, 100)), new Random(7L));
+        session.begin();
+        assertEquals(4, session.pot(), "the antes were already swept before cancelling");
+
+        session.cancel("tablegames.summary.canceled");
+
+        long total = session.seats().stream().mapToLong(Seat::credits).sum();
+        assertEquals(300, total, "not a single credit may vanish to integer division");
+    }
+
     @Test
     void wagerIsCappedAtTheStackSoAllInWorks() {
         Seat seat = Seat.forPlayer(0, ALICE, 50);

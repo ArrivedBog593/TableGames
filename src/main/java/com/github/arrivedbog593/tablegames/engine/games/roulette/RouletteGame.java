@@ -1,11 +1,15 @@
 package com.github.arrivedbog593.tablegames.engine.games.roulette;
 
+import com.github.arrivedbog593.tablegames.engine.economy.CreditAccount;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.session.GameSession;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
+import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
+import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.random.RandomGenerator;
 
 /**
@@ -85,6 +89,89 @@ public record RouletteGame(String id, RouletteWheel wheel, BetLimits limits)
     @Override
     public long minimumBet() {
         return Math.min(limits.insideMinimum(), limits.outsideMinimum());
+    }
+
+    // --- Configuration -------------------------------------------------------
+
+    /** The smallest wager a table may be set to take on an inside bet. */
+    public SettingSpec.Amount insideMinimum() {
+        return minimumSpec("inside_min", limits.insideMinimum());
+    }
+
+    /** The largest, where zero posts no ceiling of the table's own. */
+    public SettingSpec.Amount insideMaximum() {
+        return maximumSpec("inside_max", limits.insideMaximum());
+    }
+
+    public SettingSpec.Amount outsideMinimum() {
+        return minimumSpec("outside_min", limits.outsideMinimum());
+    }
+
+    public SettingSpec.Amount outsideMaximum() {
+        return maximumSpec("outside_max", limits.outsideMaximum());
+    }
+
+    /**
+     * The four numbers a roulette table posts, in the order a screen should
+     * ask for them: each minimum immediately before the maximum it pairs with.
+     */
+    @Override
+    public List<SettingSpec> settings() {
+        return List.of(insideMinimum(), insideMaximum(),
+                outsideMinimum(), outsideMaximum());
+    }
+
+    /**
+     * Whether the posted ceilings clear the floors they sit above.
+     * <p>
+     * Neither maximum can judge this alone: a ceiling of fifty is perfectly
+     * legal on its own and nonsense under a floor of a hundred. A table that
+     * stored the pair anyway would take no wager at all on half its layout.
+     */
+    @Override
+    public Optional<String> settingsProblem(TableSettings settings) {
+        if (belowItsFloor(settings, insideMinimum(), insideMaximum())) {
+            return Optional.of("tablegames.setting.problem.inside_inverted");
+        }
+        if (belowItsFloor(settings, outsideMinimum(), outsideMaximum())) {
+            return Optional.of("tablegames.setting.problem.outside_inverted");
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The limits a table set up this way posts.
+     * <p>
+     * Callers must have cleared {@link #settingsProblem} first: this builds a
+     * {@link BetLimits}, which refuses an inverted pair outright.
+     */
+    public BetLimits limitsFrom(TableSettings settings) {
+        return new BetLimits(
+                settings.get(insideMinimum()), settings.get(insideMaximum()),
+                settings.get(outsideMinimum()), settings.get(outsideMaximum()));
+    }
+
+    /**
+     * A table cannot be configured to take, or pay, more than the economy can
+     * ever hold. {@link Long#MAX_VALUE} here would let a posted limit sit
+     * where {@code amount * payoutRatio} overflows the moment a bet against
+     * it settles — the check exists to refuse the wager, not to be the thing
+     * that breaks the arithmetic doing the refusing.
+     */
+    private SettingSpec.Amount minimumSpec(String name, long fallback) {
+        return new SettingSpec.Amount(id + "." + name, fallback, 1, CreditAccount.MAX_BALANCE);
+    }
+
+    private SettingSpec.Amount maximumSpec(String name, long fallback) {
+        return new SettingSpec.Amount(
+                id + "." + name, fallback, BetLimits.UNLIMITED, CreditAccount.MAX_BALANCE);
+    }
+
+    private static boolean belowItsFloor(TableSettings settings,
+                                         SettingSpec.Amount floor,
+                                         SettingSpec.Amount ceiling) {
+        long posted = settings.get(ceiling);
+        return posted != BetLimits.UNLIMITED && posted < settings.get(floor);
     }
 
     @Override

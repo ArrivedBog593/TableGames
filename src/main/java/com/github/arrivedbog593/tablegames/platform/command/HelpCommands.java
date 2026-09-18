@@ -67,8 +67,6 @@ public final class HelpCommands {
             new Entry("/tablegames table trust <player>", "tablegames.help.table_trust", false),
             new Entry("/tablegames table untrust <player>",
                     "tablegames.help.table_untrust", false),
-            new Entry("/tablegames table pin", "tablegames.help.table_pin", true),
-            new Entry("/tablegames table unpin", "tablegames.help.table_unpin", true),
 
             new Entry("/tablegames house", "tablegames.help.house", true),
             new Entry("/tablegames house add <amount>", "tablegames.help.house_add", true),

@@ -7,6 +7,7 @@ import com.github.arrivedbog593.tablegames.engine.games.roulette.Pocket;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteAction;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteBet;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteGame;
+import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteLayout;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteSession;
 import com.github.arrivedbog593.tablegames.engine.session.ActionResult;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
@@ -14,7 +15,9 @@ import com.github.arrivedbog593.tablegames.engine.session.Seat;
 import com.github.arrivedbog593.tablegames.engine.table.BettingWindow;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.engine.table.SeatChange;
+import com.github.arrivedbog593.tablegames.engine.table.TableAccess;
 import com.github.arrivedbog593.tablegames.engine.table.TableOccupancy;
+import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
@@ -44,7 +47,6 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -67,7 +69,7 @@ import java.util.random.RandomGenerator;
  * Rounds are never saved. A round is a live thing with people standing at it;
  * resuming one across a restart, with everyone logged off and their stakes
  * half committed, is worse than starting again. Only the assigned game and
- * whether it is pinned survive a reload — everybody comes back standing.
+ * how the table is set up survive a reload — everybody comes back standing.
  * <p>
  * Security note: what a client is told is built per player, and every action
  * a client can send is revalidated here. Nothing goes over the wire wholesale.
@@ -77,84 +79,55 @@ public class TableBlockEntity extends BlockEntity {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final String KEY_GAME = "game";
-    private static final String KEY_PINNED = "pinned";
     private static final String KEY_OWNER = "owner";
     private static final String KEY_TRUSTED = "trusted";
-    private static final String KEY_LIMITS = "limits";
-    private static final String KEY_INSIDE_MIN = "inside_min";
-    private static final String KEY_INSIDE_MAX = "inside_max";
-    private static final String KEY_OUTSIDE_MIN = "outside_min";
-    private static final String KEY_OUTSIDE_MAX = "outside_max";
+    private static final String KEY_SETTINGS = "settings";
 
     /** Seats a table has before a game says otherwise. */
     private static final int UNASSIGNED_SEATS = 1;
 
-    /**
-     * How many people an owner may share a table with.
-     * <p>
-     * A ceiling rather than none, because this list is saved with the chunk
-     * and read on every configuration attempt. Anybody who needs more than
-     * this is describing a public table, which is what leaving it configured
-     * already achieves.
-     */
-    public static final int MAX_TRUSTED = 32;
-
     private String gameId = "";
 
     /**
-     * What this table chooses to accept, over and above what the house can
-     * afford. Persisted: it is a property of the table, like its game.
+     * How this table has been set up, as plain numbers keyed by setting id.
+     * <p>
+     * Persisted, like the game it hosts. The block stores the numbers and the
+     * game gives them meaning, so a table gains blinds or rule toggles by the
+     * game declaring them and nothing here changing.
+     * <p>
+     * Values belonging to games this table is not currently hosting are kept
+     * rather than dropped. A table switched from roulette to blackjack and
+     * back finds the limits it used to post still there.
      */
-    private BetLimits limits = BetLimits.DEFAULT;
+    private TableSettings settings = TableSettings.empty();
 
     /**
-     * Whether the assigned game is fixed.
-     * <p>
-     * An operator's lock, over and above ownership. Ownership already keeps
-     * strangers away from a table, so this is for the two things it cannot
-     * do: hold a laid-out casino still when the person who placed a table is
-     * not the person who should be deciding what it hosts, and stop an owner
-     * from changing their own table by accident while looking at the wrong
-     * one. Pinned refuses the change to everybody, operators included, until
-     * somebody unpins it on purpose.
-     */
-    private boolean pinned;
-
-    /**
-     * Who placed this table, or null when nobody did.
-     * <p>
-     * A table in somebody's base is theirs to set up, and asking an operator
-     * to come and choose the game is not a permission model, it is an
-     * errand. So the block remembers its owner and lets them configure it,
-     * while pinning stays operator work.
-     * <p>
-     * Null covers tables that predate this and tables placed by anything
-     * that is not a player. Those stay operator business rather than
-     * becoming unowned property that the next passer-by may reconfigure.
-     */
-    private UUID owner;
-
-    /**
-     * Who else the owner has let configure this table.
+     * Who this table belongs to and who else may set it up.
      * <p>
      * Per table rather than per player, because the thing being shared is a
      * block, not a friendship. A table in a shared base is the whole reason
      * this exists: whoever put it down should not have to be online for the
-     * others to switch from poker to Uno.
-     * <p>
-     * The list grants configuration and nothing else. Sharing the sharing
-     * would be an escalation with no way back — anyone added could add
-     * anybody, or drop the owner's other guests — so adding and removing stay
-     * with the owner and with operators.
+     * others to switch from poker to Uno. The rules themselves live in the
+     * engine, where they can be tested without a running server.
      */
-    private final Set<UUID> trusted = new LinkedHashSet<>();
+    private final TableAccess access = new TableAccess();
 
     private final BettingWindow window = new BettingWindow();
 
     private TableOccupancy occupancy = new TableOccupancy(UNASSIGNED_SEATS);
 
-    /** Wagers taken this round, in the order they were placed. */
-    private final Map<UUID, List<RouletteBet>> bets = new LinkedHashMap<>();
+    /**
+     * Wagers taken this round.
+     * <p>
+     * Roulette-shaped, because there is nothing generic left to say about a
+     * bet once its legality has been checked: what a wager even means is
+     * different for every game. The bookkeeping this needs — who has what
+     * down, how much rides on a position — is {@link RouletteLayout}'s job,
+     * pulled out so it can be tested without a running server. When a second
+     * game arrives, this field is what becomes game-specific, not everything
+     * around it.
+     */
+    private final RouletteLayout layout = new RouletteLayout();
 
     private Pocket lastResult;
 
@@ -191,32 +164,20 @@ public class TableBlockEntity extends BlockEntity {
         return gameId;
     }
 
-    public boolean isPinned() {
-        return pinned;
-    }
-
     /** Whose table this is if anybody's. */
     public Optional<UUID> owner() {
-        return Optional.ofNullable(owner);
+        return access.owner();
     }
 
-    /**
-     * Records who placed it and clears whatever sharing came with it.
-     * <p>
-     * Called from the block when it is placed. The list is dropped because a
-     * copied table carries the original's guests in its data: control
-     * clicking somebody's table in creative and putting it down would
-     * otherwise hand their friends the run of a table that is now yours.
-     */
+    /** Records who placed it. Called from the block when it is placed. */
     public void claim(UUID owner) {
-        this.owner = owner;
-        trusted.clear();
+        access.claim(owner);
         setChanged();
     }
 
     /** Everyone the owner has shared this table with. */
     public Set<UUID> trusted() {
-        return Set.copyOf(trusted);
+        return access.trusted();
     }
 
     /**
@@ -225,7 +186,7 @@ public class TableBlockEntity extends BlockEntity {
      * @return false if they were already on the list, or it is full
      */
     public boolean trust(UUID playerId) {
-        if (trusted.size() >= MAX_TRUSTED || !trusted.add(playerId)) {
+        if (!access.trust(playerId)) {
             return false;
         }
         setChanged();
@@ -234,54 +195,30 @@ public class TableBlockEntity extends BlockEntity {
 
     /** @return false if they were not on the list to begin with */
     public boolean untrust(UUID playerId) {
-        if (!trusted.remove(playerId)) {
+        if (!access.untrust(playerId)) {
             return false;
         }
         setChanged();
         return true;
     }
 
-    /**
-     * Whether this player decides who may configure the table.
-     * <p>
-     * The owner and operators, and deliberately not the people on the list:
-     * see {@link #trusted}.
-     */
+    /** Whether this player decides who may configure the table. */
     public boolean mayShare(ServerPlayer player) {
-        return player.hasPermissions(2) || player.getUUID().equals(owner);
+        return access.mayShare(player.getUUID(), player.hasPermissions(2));
     }
 
     /**
      * Whether this player may change what the table hosts and what it takes.
      * <p>
-     * Three ways in. An operator runs the server. The owner placed this
-     * particular block. The rest are people the owner shared it with, which
-     * is what makes a table in a shared base usable by the people who share
-     * it.
-     * <p>
-     * Being on the casino's administration list is not one of them: that list
-     * is authority over the economy — the shop, the conversion values, the
-     * bankroll — and a table is a block somebody put down, which may as
-     * easily be in their own base as in the casino. An administrator who
-     * needs a table configures the ones they placed, and an operator settles
-     * anything else.
-     * <p>
-     * Pinning is not on this list either and cannot be: an owner able to pin
-     * their own table could lock an operator out of it.
+     * Being on the casino's administration list is not one of the ways in:
+     * that list is authority over the economy — the shop, the conversion
+     * values, the bankroll — and a table is a block somebody put down, which
+     * may as easily be in their own base as in the casino. An administrator
+     * who needs a table configures the ones they placed, and an operator
+     * settles anything else.
      */
     public boolean mayConfigure(ServerPlayer player) {
-        if (player.hasPermissions(2)) {
-            return true;
-        }
-        UUID playerId = player.getUUID();
-        return playerId.equals(owner) || trusted.contains(playerId);
-    }
-
-    /** Pins or unpins the assigned game. Callers must check operator rights. */
-    public void setPinned(boolean pinned) {
-        this.pinned = pinned;
-        setChanged();
-        markDirty();
+        return access.mayConfigure(player.getUUID(), player.hasPermissions(2));
     }
 
     /**
@@ -290,14 +227,8 @@ public class TableBlockEntity extends BlockEntity {
      * Changing the game under live wagers would leave players staked into
      * rules that no longer apply and seated into a table whose seat count may
      * have just changed underneath them.
-     *
-     * @return false if the table is pinned and nothing was changed
      */
-    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-    public boolean setGame(Game game) {
-        if (pinned) {
-            return false;
-        }
+    public void setGame(Game game) {
         abandon();
         occupancy.clear();
         this.gameId = game == null ? "" : game.id();
@@ -306,7 +237,6 @@ public class TableBlockEntity extends BlockEntity {
         setChanged();
         updateVariant(game == null ? TableVariant.BLANK : Games.variantOf(game));
         markDirty();
-        return true;
     }
 
     /**
@@ -388,7 +318,7 @@ public class TableBlockEntity extends BlockEntity {
     public SeatChange stand(UUID playerId) {
         SeatChange change = occupancy.stand(playerId, phase());
         if (change.changed()) {
-            bets.remove(playerId);
+            layout.clear(playerId);
             publishCommitments();
             callIfUnanimous();
             markDirty();
@@ -474,15 +404,11 @@ public class TableBlockEntity extends BlockEntity {
 
     /** What this player has on the layout right now. */
     public List<RouletteBet> betsOf(UUID playerId) {
-        return List.copyOf(bets.getOrDefault(playerId, List.of()));
+        return layout.betsOf(playerId);
     }
 
     public long wageredBy(UUID playerId) {
-        long total = 0;
-        for (RouletteBet bet : betsOf(playerId)) {
-            total += bet.amount();
-        }
-        return total;
+        return layout.wageredBy(playerId);
     }
 
     /**
@@ -511,22 +437,51 @@ public class TableBlockEntity extends BlockEntity {
         }
         long derived = OutcomeSettler.tableMaximum(server, assigned.get(),
                 type.payoutRatio());
-        return Math.min(derived, limits.maximumFor(type));
+        return Math.min(derived, limits().maximumFor(type));
     }
 
     /** The smallest wager this table will take on a bet of this type. */
     public long effectiveMinimum(BetType type) {
-        return limits.minimumFor(type);
+        return limits().minimumFor(type);
     }
 
+    /**
+     * The wager limits this table posts, derived from its settings.
+     * <p>
+     * Derived rather than stored, because limits are roulette's idea of what
+     * a table can be told and not every game's. A table hosting something
+     * else answers with the default, which restricts nothing and lets the
+     * bankroll alone decide.
+     */
     public BetLimits limits() {
-        return limits;
+        return roulette().map(game -> game.limitsFrom(settings)).orElse(BetLimits.DEFAULT);
     }
 
-    public void setLimits(BetLimits limits) {
-        this.limits = Objects.requireNonNull(limits, "limits");
+    /** How this table is set up. */
+    public TableSettings settings() {
+        return settings;
+    }
+
+    /**
+     * Takes a whole configuration at once, or refuses it whole.
+     *
+     * @return the problem the assigned game found, or empty when it was applied
+     */
+    public Optional<String> applySettings(TableSettings proposed) {
+        Objects.requireNonNull(proposed, "proposed");
+        Optional<String> problem = game().flatMap(game -> game.settingsProblem(proposed));
+        if (problem.isPresent()) {
+            return problem;
+        }
+        this.settings = proposed;
         setChanged();
         markDirty();
+        return Optional.empty();
+    }
+
+    /** The assigned game when it is a roulette, which is what posts limits. */
+    private Optional<RouletteGame> roulette() {
+        return game().filter(RouletteGame.class::isInstance).map(RouletteGame.class::cast);
     }
 
     /**
@@ -561,10 +516,11 @@ public class TableBlockEntity extends BlockEntity {
         if (!OutcomeSettler.canOpen(server, roulette)) {
             return Component.translatable("tablegames.roulette.house_closed");
         }
-        if (bets.getOrDefault(playerId, List.of()).size()
+        if (layout.betsOf(playerId).size()
                 >= RouletteStatePayload.MAX_BETS_ON_WIRE) {
             return Component.translatable("tablegames.reject.too_many_bets");
         }
+        BetLimits limits = limits();
         if (bet.amount() < limits.minimumFor(bet.type())) {
             return Component.translatable("tablegames.reject.below_minimum_bet",
                     CreditFormat.of(limits.minimumFor(bet.type())));
@@ -577,7 +533,7 @@ public class TableBlockEntity extends BlockEntity {
         // The table's own limit is per player, because that is what a posted
         // maximum means to somebody standing at a wheel: the most *you* may
         // put on a number, not the almost everybody together may.
-        long mine = stakedOn(playerId, bet);
+        long mine = layout.stakedOn(playerId, bet);
         if (mine + bet.amount() > limits.maximumFor(bet.type())) {
             return Component.translatable("tablegames.reject.above_maximum_bet",
                     CreditFormat.of(limits.maximumFor(bet.type())),
@@ -587,7 +543,7 @@ public class TableBlockEntity extends BlockEntity {
         // actually has to cover. A straight-up pocket paying 35:1 costs the
         // house the same whether one player or eight put the credits there.
         long derived = OutcomeSettler.tableMaximum(server, roulette, bet.type().payoutRatio());
-        long onTable = stakedOn(null, bet);
+        long onTable = layout.stakedOn(null, bet);
         if (onTable + bet.amount() > derived) {
             return Component.translatable("tablegames.reject.position_full",
                     CreditFormat.of(Math.max(0, derived - onTable)));
@@ -611,14 +567,14 @@ public class TableBlockEntity extends BlockEntity {
         // Both checks above are about this table alone; the bankroll is
         // shared, so what every table together stands to lose has to fit
         // inside it as well.
-        List<RouletteBet> proposed = new ArrayList<>(allBets());
+        List<RouletteBet> proposed = new ArrayList<>(layout.allBets());
         proposed.add(bet);
         long worstCase = roulette.wheel().worstCaseHouseCost(proposed);
         if (!OutcomeSettler.withinExposure(server, roulette, commitmentKey(), worstCase)) {
             return Component.translatable("tablegames.reject.house_exposed");
         }
 
-        bets.computeIfAbsent(playerId, key -> new ArrayList<>()).add(bet);
+        layout.place(playerId, bet);
         publishCommitments();
         // Backing a new chip means you are no longer finished, the same way
         // the engine's own session treats it.
@@ -626,39 +582,6 @@ public class TableBlockEntity extends BlockEntity {
         window.start();
         markDirty();
         return null;
-    }
-
-    /**
-     * What is riding on the same position as this wager.
-     * <p>
-     * The same position means the same bet type and the same target: two chips on red are
-     * one stake, a chip on red and one on 17 are two.
-     *
-     * @param playerId whose chips to count, or null for the whole table
-     */
-    private long stakedOn(UUID playerId, RouletteBet bet) {
-        long total = 0;
-        for (Map.Entry<UUID, List<RouletteBet>> entry : bets.entrySet()) {
-            if (playerId != null && !playerId.equals(entry.getKey())) {
-                continue;
-            }
-            for (RouletteBet placed : entry.getValue()) {
-                if (placed.type() == bet.type()
-                        && Objects.equals(placed.target(), bet.target())) {
-                    total += placed.amount();
-                }
-            }
-        }
-        return total;
-    }
-
-    /** Every wager on this table, whoever placed it. */
-    private List<RouletteBet> allBets() {
-        List<RouletteBet> all = new ArrayList<>();
-        for (List<RouletteBet> placed : bets.values()) {
-            all.addAll(placed);
-        }
-        return all;
     }
 
     /**
@@ -687,18 +610,18 @@ public class TableBlockEntity extends BlockEntity {
     private void publishCommitments() {
         Optional<Game> assigned = game();
         if (assigned.isEmpty() || !(assigned.get() instanceof RouletteGame roulette)
-                || bets.isEmpty()) {
+                || layout.isEmpty()) {
             releaseCommitments();
             return;
         }
         OutcomeSettler.commitExposure(commitmentKey(),
-                roulette.wheel().worstCaseHouseCost(allBets()));
+                roulette.wheel().worstCaseHouseCost(layout.allBets()));
 
         // Cleared first, so that a player who took every chip back is
         // released rather than left at whatever they had before.
         OutcomeSettler.releaseStakes(commitmentKey());
-        for (UUID playerId : bets.keySet()) {
-            OutcomeSettler.commitStake(commitmentKey(), playerId, wageredBy(playerId));
+        for (UUID playerId : layout.players()) {
+            OutcomeSettler.commitStake(commitmentKey(), playerId, layout.wageredBy(playerId));
         }
     }
 
@@ -713,7 +636,7 @@ public class TableBlockEntity extends BlockEntity {
         if (!isBettingOpen()) {
             return false;
         }
-        if (bets.remove(playerId) == null) {
+        if (!layout.clear(playerId)) {
             return false;
         }
         publishCommitments();
@@ -750,7 +673,7 @@ public class TableBlockEntity extends BlockEntity {
             // Their chips come back with them, exactly as if they had stood
             // up. The eviction is held until a phase that allows it, so this
             // can never fire mid-lockout on a live stake.
-            bets.remove(playerId);
+            layout.clear(playerId);
             publishCommitments();
             markDirty();
         }
@@ -796,7 +719,7 @@ public class TableBlockEntity extends BlockEntity {
         if (level == null || level.getServer() == null) {
             return;
         }
-        List<UUID> players = new ArrayList<>(bets.keySet());
+        List<UUID> players = layout.players();
         if (players.isEmpty()) {
             endRound(players);
             return;
@@ -805,7 +728,7 @@ public class TableBlockEntity extends BlockEntity {
         MinecraftServer server = level.getServer();
         Optional<Game> assigned = game();
         if (assigned.isEmpty() || !(assigned.get() instanceof RouletteGame roulette)) {
-            bets.clear();
+            layout.clearAll();
             endRound(players);
             return;
         }
@@ -826,10 +749,10 @@ public class TableBlockEntity extends BlockEntity {
         // stake accepted at the block is refused here and quietly ceases to
         // exist between being taken and being paid.
         RouletteSession session =
-                (RouletteSession) roulette.createSession(seats, random, limits);
+                (RouletteSession) roulette.createSession(seats, random, limits());
         session.begin();
         for (UUID playerId : players) {
-            for (RouletteBet bet : bets.get(playerId)) {
+            for (RouletteBet bet : layout.betsOf(playerId)) {
                 ActionResult result = session.submit(playerId, new RouletteAction.Place(bet));
                 if (!result.accepted()) {
                     // The two layers disagree about what is legal. Loud,
@@ -846,7 +769,7 @@ public class TableBlockEntity extends BlockEntity {
 
         Pocket result = session.result().orElse(null);
         Outcome outcome = session.outcome().orElse(null);
-        bets.clear();
+        layout.clearAll();
 
         if (outcome == null) {
             endRound(players);
@@ -890,7 +813,7 @@ public class TableBlockEntity extends BlockEntity {
      */
     public void abandon() {
         releaseCommitments();
-        bets.clear();
+        layout.clearAll();
         window.reset();
         occupancy.clearReady();
         lastResult = null;
@@ -938,10 +861,8 @@ public class TableBlockEntity extends BlockEntity {
     protected void loadAdditional(@NotNull CompoundTag tag, HolderLookup.@NotNull Provider registries) {
         super.loadAdditional(tag, registries);
         this.gameId = tag.getString(KEY_GAME);
-        this.pinned = tag.getBoolean(KEY_PINNED);
-        this.owner = tag.hasUUID(KEY_OWNER) ? tag.getUUID(KEY_OWNER) : null;
-        readTrusted(tag);
-        this.limits = readLimits(tag);
+        readAccess(tag);
+        this.settings = readSettings(tag);
         this.occupancy = new TableOccupancy(game()
                 .map(assigned -> Math.max(1, assigned.maxPlayers()))
                 .orElse(UNASSIGNED_SEATS));
@@ -951,69 +872,72 @@ public class TableBlockEntity extends BlockEntity {
     protected void saveAdditional(@NotNull CompoundTag tag, HolderLookup.@NotNull Provider registries) {
         super.saveAdditional(tag, registries);
         tag.putString(KEY_GAME, gameId);
-        tag.putBoolean(KEY_PINNED, pinned);
-        if (owner != null) {
-            tag.putUUID(KEY_OWNER, owner);
-        }
-        writeTrusted(tag);
-        writeLimits(tag);
+        writeAccess(tag);
+        writeSettings(tag);
     }
 
     /**
-     * Reads a table's own limits, falling back to the default when the tag
-     * predates them. An older table simply had no limits of its own, which is
-     * exactly what the default says.
+     * Reads how a table was set up.
+     * <p>
+     * Every value is taken as a number without judging it here: the specs
+     * that say what is legal belong to the game, which may not be the one
+     * that stored them. Reading validates each value against its own spec,
+     * and a set the game refuses outright is dropped rather than kept, so a
+     * hand edited or corrupted tag cannot leave a table posting limits that
+     * would refuse every wager on half its layout.
      */
-    private static BetLimits readLimits(CompoundTag tag) {
-        if (!tag.contains(KEY_LIMITS)) {
-            return BetLimits.DEFAULT;
+    private TableSettings readSettings(CompoundTag tag) {
+        if (!tag.contains(KEY_SETTINGS)) {
+            return TableSettings.empty();
         }
-        CompoundTag stored = tag.getCompound(KEY_LIMITS);
-        try {
-            return new BetLimits(
-                    stored.getLong(KEY_INSIDE_MIN),
-                    stored.getLong(KEY_INSIDE_MAX),
-                    stored.getLong(KEY_OUTSIDE_MIN),
-                    stored.getLong(KEY_OUTSIDE_MAX));
-        } catch (IllegalArgumentException corrupt) {
-            LOGGER.warn("[TableGames] A table had unusable bet limits stored; "
-                    + "falling back to the default.", corrupt);
-            return BetLimits.DEFAULT;
+        CompoundTag stored = tag.getCompound(KEY_SETTINGS);
+        Map<String, Long> values = new LinkedHashMap<>();
+        for (String key : stored.getAllKeys()) {
+            values.put(key, stored.getLong(key));
         }
+        TableSettings read = TableSettings.of(values);
+        Optional<String> problem = game().flatMap(game -> game.settingsProblem(read));
+        if (problem.isPresent()) {
+            LOGGER.warn("[TableGames] A table had unusable settings stored ({}); "
+                    + "falling back to the defaults.", problem.get());
+            return TableSettings.empty();
+        }
+        return read;
     }
 
-    private void readTrusted(CompoundTag tag) {
-        trusted.clear();
+    private void readAccess(CompoundTag tag) {
+        UUID storedOwner = tag.hasUUID(KEY_OWNER) ? tag.getUUID(KEY_OWNER) : null;
+        List<UUID> guests = new ArrayList<>();
         ListTag stored = tag.getList(KEY_TRUSTED, Tag.TAG_INT_ARRAY);
-        for (int i = 0; i < stored.size() && trusted.size() < MAX_TRUSTED; i++) {
+        for (int i = 0; i < stored.size(); i++) {
             int[] raw = stored.getIntArray(i);
             if (raw.length == 4) {
-                trusted.add(UUIDUtil.uuidFromIntArray(raw));
+                guests.add(UUIDUtil.uuidFromIntArray(raw));
             }
         }
+        access.restore(storedOwner, guests);
     }
 
-    private void writeTrusted(CompoundTag tag) {
-        if (trusted.isEmpty()) {
+    private void writeAccess(CompoundTag tag) {
+        access.owner().ifPresent(owner -> tag.putUUID(KEY_OWNER, owner));
+        Set<UUID> guests = access.trusted();
+        if (guests.isEmpty()) {
             return;
         }
         ListTag stored = new ListTag();
-        for (UUID guest : trusted) {
+        for (UUID guest : guests) {
             stored.add(new IntArrayTag(UUIDUtil.uuidToIntArray(guest)));
         }
         tag.put(KEY_TRUSTED, stored);
     }
 
-    private void writeLimits(CompoundTag tag) {
-        if (limits.isDefault()) {
+    private void writeSettings(CompoundTag tag) {
+        if (settings.isEmpty()) {
             return;
         }
         CompoundTag stored = new CompoundTag();
-        stored.putLong(KEY_INSIDE_MIN, limits.insideMinimum());
-        stored.putLong(KEY_INSIDE_MAX, limits.insideMaximum());
-        stored.putLong(KEY_OUTSIDE_MIN, limits.outsideMinimum());
-        stored.putLong(KEY_OUTSIDE_MAX, limits.outsideMaximum());
-        tag.put(KEY_LIMITS, stored);
+        settings.values().forEach(stored::putLong);
+        tag.put(KEY_SETTINGS, stored);
     }
 
     /**
@@ -1024,7 +948,6 @@ public class TableBlockEntity extends BlockEntity {
     public @NotNull CompoundTag getUpdateTag(HolderLookup.@NotNull Provider registries) {
         CompoundTag tag = new CompoundTag();
         tag.putString(KEY_GAME, gameId);
-        tag.putBoolean(KEY_PINNED, pinned);
         return tag;
     }
 

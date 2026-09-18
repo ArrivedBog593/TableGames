@@ -3,7 +3,11 @@ package com.github.arrivedbog593.tablegames.platform.command;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetLimits;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetType;
+import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteGame;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
+import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
+import com.github.arrivedbog593.tablegames.engine.table.TableAccess;
+import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
@@ -71,8 +75,7 @@ public final class TableCommands {
 
         // No blanket requirement on "table". Who may configure one depends on
         // the table being looked at, which Brigadier cannot know when it
-        // evaluates a requirement, so the check lives inside each command, and
-        // only pin and unpin are gated up here.
+        // evaluates a requirement, so the check lives inside each command.
         root.then(Commands.literal("table")
                 .then(Commands.literal("set")
                         .then(Commands.argument("game", StringArgumentType.word())
@@ -120,13 +123,7 @@ public final class TableCommands {
                                         context.getSource(),
                                         GameProfileArgument.getGameProfiles(context, "player")))))
                 .then(Commands.literal("trusted")
-                        .executes(context -> listTrusted(context.getSource())))
-                .then(Commands.literal("pin")
-                        .requires(source -> source.hasPermission(2))
-                        .executes(context -> setPinned(context.getSource(), true)))
-                .then(Commands.literal("unpin")
-                        .requires(source -> source.hasPermission(2))
-                        .executes(context -> setPinned(context.getSource(), false))));
+                        .executes(context -> listTrusted(context.getSource()))));
 
         dispatcher.register(root);
     }
@@ -143,10 +140,7 @@ public final class TableCommands {
         if (table == null) {
             return 0;
         }
-        if (!table.setGame(game.get())) {
-            source.sendFailure(Component.translatable("tablegames.command.table.pinned"));
-            return 0;
-        }
+        table.setGame(game.get());
         source.sendSuccess(() -> Component.translatable(
                 "tablegames.command.table.assigned",
                 Component.translatable(game.get().translationKey())), true);
@@ -158,10 +152,7 @@ public final class TableCommands {
         if (table == null) {
             return 0;
         }
-        if (!table.setGame(null)) {
-            source.sendFailure(Component.translatable("tablegames.command.table.pinned"));
-            return 0;
-        }
+        table.setGame(null);
         source.sendSuccess(() -> Component.translatable(
                 "tablegames.command.table.cleared"), true);
         return 1;
@@ -195,17 +186,34 @@ public final class TableCommands {
         if (table == null) {
             return 0;
         }
-        BetLimits updated;
+        Optional<RouletteGame> hosted = table.game()
+                .filter(RouletteGame.class::isInstance)
+                .map(RouletteGame.class::cast);
+        if (hosted.isEmpty()) {
+            source.sendFailure(Component.translatable(
+                    "tablegames.command.table.limits_wrong_game"));
+            return 0;
+        }
+        RouletteGame game = hosted.get();
+        TableSettings proposed;
         try {
-            updated = inside
-                    ? table.limits().withInside(minimum, maximum)
-                    : table.limits().withOutside(minimum, maximum);
+            proposed = inside
+                    ? table.settings()
+                    .with(game.insideMinimum(), minimum)
+                    .with(game.insideMaximum(), maximum)
+                    : table.settings()
+                    .with(game.outsideMinimum(), minimum)
+                    .with(game.outsideMaximum(), maximum);
         } catch (IllegalArgumentException invalid) {
             source.sendFailure(Component.translatable(
                     "tablegames.command.table.limits_invalid"));
             return 0;
         }
-        table.setLimits(updated);
+        Optional<String> problem = table.applySettings(proposed);
+        if (problem.isPresent()) {
+            source.sendFailure(Component.translatable(problem.get()));
+            return 0;
+        }
         source.sendSuccess(() -> Component.translatable(
                 inside ? "tablegames.command.table.limits_inside_set"
                         : "tablegames.command.table.limits_outside_set",
@@ -216,39 +224,27 @@ public final class TableCommands {
         return 1;
     }
 
-    /** Drops a table's own limits, leaving only the bankroll's. */
+    /**
+     * Sends everything the assigned game can be told back to its defaults.
+     * <p>
+     * Only the assigned game's settings, so a table that has been roulette
+     * before and may be again keeps what it posted then.
+     */
     private static int clearLimits(CommandSourceStack source) throws CommandSyntaxException {
         TableBlockEntity table = configurableTable(source);
         if (table == null) {
             return 0;
         }
-        table.setLimits(BetLimits.DEFAULT);
+        TableSettings cleared = table.settings();
+        for (SettingSpec spec : table.game().map(Game::settings).orElse(List.of())) {
+            cleared = cleared.without(spec);
+        }
+        table.applySettings(cleared);
         source.sendSuccess(() -> Component.translatable(
                 "tablegames.command.table.limits_cleared"), true);
         return 1;
     }
 
-    /**
-     * Fixes or releases a table's game.
-     * <p>
-     * Its own branch carries the operator requirement, since the rest of the
-     * tree no longer does: pinning has to be the operator's tool, not
-     * something a visitor can do to every table in the casino on their first
-     * afternoon, and not something an owner can use to lock an operator out
-     * of a table.
-     */
-    private static int setPinned(CommandSourceStack source, boolean pinned)
-            throws CommandSyntaxException {
-        TableBlockEntity table = lookedAtTable(source);
-        if (table == null) {
-            return 0;
-        }
-        table.setPinned(pinned);
-        source.sendSuccess(() -> Component.translatable(pinned
-                ? "tablegames.command.table.pin_set"
-                : "tablegames.command.table.pin_cleared"), true);
-        return 1;
-    }
 
     /**
      * Reports what is happening at the table being looked at.
@@ -272,14 +268,8 @@ public final class TableCommands {
         }
         Game assigned = game.get();
 
-        MutableComponent heading = Component.translatable(assigned.translationKey())
+        MutableComponent title = Component.translatable(assigned.translationKey())
                 .withStyle(ChatFormatting.GOLD);
-        if (table.isPinned()) {
-            heading = heading.append(Component.literal(" ")).append(
-                    Component.translatable("tablegames.command.table.info_pinned")
-                            .withStyle(ChatFormatting.DARK_GRAY));
-        }
-        MutableComponent title = heading;
         source.sendSuccess(() -> title, false);
 
         RoundPhase phase = table.phase();
@@ -364,10 +354,10 @@ public final class TableCommands {
         }
         if (!table.trust(guest.getId())) {
             source.sendFailure(Component.translatable(
-                    table.trusted().size() >= TableBlockEntity.MAX_TRUSTED
+                    table.trusted().size() >= TableAccess.MAX_TRUSTED
                             ? "tablegames.command.table.trust_full"
                             : "tablegames.command.table.trust_already",
-                    guest.getName(), TableBlockEntity.MAX_TRUSTED));
+                    guest.getName(), TableAccess.MAX_TRUSTED));
             return 0;
         }
         source.sendSuccess(() -> Component.translatable(

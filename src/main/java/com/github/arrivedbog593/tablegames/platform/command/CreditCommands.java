@@ -1,5 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
+import com.github.arrivedbog593.tablegames.engine.economy.CreditAccount;
 import com.github.arrivedbog593.tablegames.engine.economy.TransactionType;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditExchange;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
@@ -72,7 +73,8 @@ public final class CreditCommands {
         // that fight silently and in the wrong direction.
         root.then(Commands.literal("pay")
                 .then(Commands.argument("target", EntityArgument.player())
-                        .then(Commands.argument("amount", LongArgumentType.longArg(1))
+                        .then(Commands.argument("amount",
+                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
                                 .executes(context -> pay(
                                         context.getSource(),
                                         EntityArgument.getPlayer(context, "target"),
@@ -85,7 +87,8 @@ public final class CreditCommands {
         root.then(Commands.literal("give")
                 .requires(source -> source.hasPermission(2))
                 .then(Commands.argument("target", EntityArgument.player())
-                        .then(Commands.argument("amount", LongArgumentType.longArg(1))
+                        .then(Commands.argument("amount",
+                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
                                 .executes(context -> give(
                                         context.getSource(),
                                         EntityArgument.getPlayer(context, "target"),
@@ -94,7 +97,8 @@ public final class CreditCommands {
         root.then(Commands.literal("set")
                 .requires(source -> source.hasPermission(2))
                 .then(Commands.argument("target", EntityArgument.player())
-                        .then(Commands.argument("amount", LongArgumentType.longArg(0))
+                        .then(Commands.argument("amount",
+                                        LongArgumentType.longArg(0, CreditAccount.MAX_BALANCE))
                                 .executes(context -> set(
                                         context.getSource(),
                                         EntityArgument.getPlayer(context, "target"),

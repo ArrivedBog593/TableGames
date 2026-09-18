@@ -201,7 +201,6 @@ public final class RouletteSession extends GameSession {
         result = wheel.spin(random());
 
         long staked = collectBets();
-        addToPot(0);
 
         List<Payout> payouts = new ArrayList<>();
         List<UUID> winners = new ArrayList<>();
@@ -222,11 +221,6 @@ public final class RouletteSession extends GameSession {
             returned += won;
             payouts.add(new Payout(seat.playerId(), won - wagered));
         }
-
-        // Whatever the house keeps stays in the pot as its take; a losing
-        // spin for the house leaves the pot at zero, and the difference is
-        // covered from the house balance by the platform layer.
-        takePot();
 
         finish(new Outcome(payouts, winners, 0, summaryKeyFor(staked, returned)));
     }

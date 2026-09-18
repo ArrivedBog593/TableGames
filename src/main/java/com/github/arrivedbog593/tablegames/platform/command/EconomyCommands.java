@@ -1,5 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
+import com.github.arrivedbog593.tablegames.engine.economy.CreditAccount;
 import com.github.arrivedbog593.tablegames.engine.economy.EconomyIssue;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyEvents;
@@ -54,7 +55,8 @@ public final class EconomyCommands {
         root.then(Commands.literal("economy")
                 .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("set")
-                        .then(Commands.argument("credits", LongArgumentType.longArg(1))
+                        .then(Commands.argument("credits",
+                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
                                 .executes(context -> setHeld(
                                         context.getSource(),
                                         LongArgumentType.getLong(context, "credits")))))
@@ -82,7 +84,8 @@ public final class EconomyCommands {
         root.then(Commands.literal("shop")
                 .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("add")
-                        .then(Commands.argument("price", LongArgumentType.longArg(1))
+                        .then(Commands.argument("price",
+                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
                                 .executes(context -> addShopHeld(
                                         context.getSource(),
                                         LongArgumentType.getLong(context, "price")))))
@@ -98,7 +101,8 @@ public final class EconomyCommands {
                 .then(Commands.literal("price")
                         .then(Commands.argument("entry", IntegerArgumentType.integer(1))
                                 .suggests(EconomySuggestions.SHOP_ENTRIES)
-                                .then(Commands.argument("price", LongArgumentType.longArg(1))
+                                .then(Commands.argument("price",
+                                                LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
                                         .executes(context -> repriceShop(
                                                 context.getSource(),
                                                 IntegerArgumentType.getInteger(context, "entry"),

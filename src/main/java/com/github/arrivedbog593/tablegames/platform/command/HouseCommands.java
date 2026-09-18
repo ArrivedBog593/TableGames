@@ -1,5 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
+import com.github.arrivedbog593.tablegames.engine.economy.CreditAccount;
 import com.github.arrivedbog593.tablegames.engine.economy.CreditValueTable;
 import com.github.arrivedbog593.tablegames.engine.economy.HouseBankroll;
 import com.github.arrivedbog593.tablegames.engine.economy.HouseExposure;
@@ -47,15 +48,18 @@ public final class HouseCommands {
                 .requires(source -> source.hasPermission(2))
                 .executes(context -> status(context.getSource()))
                 .then(Commands.literal("add")
-                        .then(Commands.argument("amount", LongArgumentType.longArg(1))
+                        .then(Commands.argument("amount",
+                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
                                 .executes(context -> add(context.getSource(),
                                         LongArgumentType.getLong(context, "amount")))))
                 .then(Commands.literal("take")
-                        .then(Commands.argument("amount", LongArgumentType.longArg(1))
+                        .then(Commands.argument("amount",
+                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
                                 .executes(context -> take(context.getSource(),
                                         LongArgumentType.getLong(context, "amount")))))
                 .then(Commands.literal("set")
-                        .then(Commands.argument("amount", LongArgumentType.longArg(0))
+                        .then(Commands.argument("amount",
+                                        LongArgumentType.longArg(0, CreditAccount.MAX_BALANCE))
                                 .executes(context -> set(context.getSource(),
                                         LongArgumentType.getLong(context, "amount")))))
                 .then(Commands.literal("exposure")
@@ -63,7 +67,8 @@ public final class HouseCommands {
                                 .executes(context -> exposure(context.getSource(),
                                         IntegerArgumentType.getInteger(context, "percent")))))
                 .then(Commands.literal("reserve")
-                        .then(Commands.argument("credits", LongArgumentType.longArg(0))
+                        .then(Commands.argument("credits",
+                                        LongArgumentType.longArg(0, CreditAccount.MAX_BALANCE))
                                 .executes(context -> reserve(context.getSource(),
                                         LongArgumentType.getLong(context, "credits")))))
                 .then(Commands.literal("spread")
@@ -73,7 +78,8 @@ public final class HouseCommands {
                                 .executes(context -> spread(context.getSource(),
                                         IntegerArgumentType.getInteger(context, "percent")))))
                 .then(Commands.literal("plan")
-                        .then(Commands.argument("maxbet", LongArgumentType.longArg(1))
+                        .then(Commands.argument("maxbet",
+                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
                                 .executes(context -> plan(context.getSource(),
                                         LongArgumentType.getLong(context, "maxbet"))))));
 

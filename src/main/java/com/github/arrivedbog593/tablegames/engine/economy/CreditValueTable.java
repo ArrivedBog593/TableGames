@@ -10,9 +10,11 @@ import java.util.Set;
 /**
  * What each item is worth in credits, and nothing more.
  * <p>
- * Conversion is one to one in both directions: an item worth ten credits
- * costs exactly ten credits to buy back. No spread, no house cut. The table
- * is a cashier, not a market.
+ * One figure per item, quoted in both directions: handing one in pays what
+ * the table says, and taking one out costs the same, plus whatever surcharge
+ * the house has set. That surcharge is a fee on undoing the trade rather
+ * than a second price list — see {@link #spreadPercent}. With no surcharge
+ * the two directions match exactly, which is how the table starts out.
  * <p>
  * Only listed items convert. An iron ingot being worth ten credits says
  * nothing about an iron block; if the block is not listed, it cannot be
@@ -84,9 +86,7 @@ public final class CreditValueTable {
         return new CreditValueTable(Map.of());
     }
 
-    /** Credits for one of these items, or empty when it is not convertible.
-     * <p>
-     * The surcharge percentage on buying items back. */
+    /** The surcharge percentage on buying items back. */
     public int spreadPercent() {
         return spreadPercent;
     }
@@ -129,6 +129,7 @@ public final class CreditValueTable {
                         "Item is not convertible: " + itemId)), count);
     }
 
+    /** Credits for one of these items, or empty when it is not convertible. */
     public Optional<Long> valueOf(String itemId) {
         return Optional.ofNullable(values.get(itemId));
     }
@@ -157,40 +158,7 @@ public final class CreditValueTable {
         }
         long unit = valueOf(itemId).orElseThrow(() ->
                 new IllegalArgumentException("Item is not convertible: " + itemId));
-        return unit * count;
-    }
-
-    /**
-     * How many whole items a credit balance buys, and what is left over.
-     * <p>
-     * Credits are never rounded away: the remainder stays with the player.
-     * Silently swallowing it would be a slow leak that players eventually
-     * notice and read as theft.
-     *
-     * @throws IllegalArgumentException if the item is not convertible
-     */
-    public Purchase itemsFor(String itemId, long credits) {
-        if (credits < 0) {
-            throw new IllegalArgumentException("Negative credits: " + credits);
-        }
-        // Priced at the buyback rate, so the surcharge is not a surprise
-        // discovered after the count has been worked out.
-        long unit = buybackUnit(itemId);
-        long count = credits / unit;
-        return new Purchase(itemId, count, credits - count * unit);
-    }
-
-    /**
-     * The result of turning credits back into items.
-     *
-     * @param itemId    what is being bought back
-     * @param count     how many whole items the credits covered
-     * @param remainder credits left over, returned to the player untouched
-     */
-    public record Purchase(String itemId, long count, long remainder) {
-        public boolean isEmpty() {
-            return count == 0;
-        }
+        return Math.multiplyExact(unit, count);
     }
 
     public static final class Builder {

@@ -66,26 +66,6 @@ class BuybackSpreadTest {
     }
 
     @Test
-    void buyingWithCreditsUsesTheBuybackPrice() {
-        // Otherwise the count would be worked out at the old price and the
-        // surcharge discovered afterward.
-        CreditValueTable withFee = table(10);
-        CreditValueTable.Purchase purchase =
-                withFee.itemsFor("minecraft:diamond", 1_000);
-        assertEquals(8, purchase.count());
-        assertEquals(1_000 - 8 * 121, purchase.remainder());
-    }
-
-    @Test
-    void theRemainderStillGoesBackToThePlayer() {
-        CreditValueTable withFee = table(25);
-        CreditValueTable.Purchase purchase =
-                withFee.itemsFor("minecraft:iron_ingot", 100);
-        long unit = withFee.buybackUnit("minecraft:iron_ingot");
-        assertEquals(100, purchase.count() * unit + purchase.remainder());
-    }
-
-    @Test
     void aHundredPercentDoublesTheBuybackPrice() {
         CreditValueTable withFee = table(CreditValueTable.MAX_SPREAD_PERCENT);
         assertEquals(220, withFee.buybackUnit("minecraft:diamond"));
