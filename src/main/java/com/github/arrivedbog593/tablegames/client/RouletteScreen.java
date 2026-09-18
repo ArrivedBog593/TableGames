@@ -78,6 +78,9 @@ public class RouletteScreen extends TableScreen {
     private static final int CHIP_ROW_Y = 112;
 
     private static final int BUTTON_W = 92;
+    private static final int BUTTON_GAP = 4;
+    /** "Repeat" and "Double" share the width "Clear bets" usually takes. */
+    private static final int HALF_BUTTON_W = (BUTTON_W - BUTTON_GAP) / 2;
     private static final int BUTTON_ROW_Y = 136;
 
     private static final int RED = 0xFFB3212B;
@@ -91,7 +94,13 @@ public class RouletteScreen extends TableScreen {
             1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36
     };
 
-    private int chipIndex = 2;
+    /**
+     * What a felt click stakes before the player has built up anything of
+     * their own. A sensible middle chip rather than the smallest one, so a
+     * fresh screen is ready to bet without anybody having to think about it.
+     */
+    private static final long DEFAULT_STAKE = CHIPS[2];
+
     private final List<Spot> spots = new ArrayList<>();
 
     /** A clickable region of the felt and the wager it stands for. */
@@ -117,12 +126,15 @@ public class RouletteScreen extends TableScreen {
     }
 
     /**
-     * A typed amount, which overrides the selected chip while it holds a
-     * usable number.
+     * The stack in the player's hand, as digits.
      * <p>
-     * Six denominations cover the common stakes and nothing else. Backing
-     * 4,845 with fixed chips means eight clicks and arithmetic, and "put down
-     * exactly what I have left" is not expressible at all.
+     * This is the chip cart. Clicking a chip adds its value here rather than
+     * selecting it outright, so a player builds 130 out of a hundred, a
+     * twenty-five and a five the way a real hand would, and sees the running
+     * total the whole time instead of trusting seven denominations to add up
+     * in their head. Typing directly still works and composes with clicking
+     * — the box does not care which of the two put a number in it — which is
+     * what makes an amount like 4,845 reachable at all.
      */
     private EditBox customAmount;
 
@@ -142,23 +154,35 @@ public class RouletteScreen extends TableScreen {
         addRenderableWidget(customAmount);
     }
 
-    /**
-     * What a click on the felt would stake: the typed amount when there is
-     * one, otherwise the selected chip.
-     */
+    /** What a click on the felt would stake: the stack in hand, or the default. */
     private long stakeToPlace() {
-        if (customAmount != null && !customAmount.getValue().isEmpty()) {
-            try {
-                long typed = Long.parseLong(customAmount.getValue());
-                if (typed > 0) {
-                    return typed;
-                }
-            } catch (NumberFormatException tooLong) {
-                // Twelve digits of nines overflows. Fall through to the chip.
-                return CHIPS[chipIndex];
-            }
+        long pending = pendingAmount();
+        return pending > 0 ? pending : DEFAULT_STAKE;
+    }
+
+    /** What the box currently reads, as a number. Zero for empty or unusable text. */
+    private long pendingAmount() {
+        if (customAmount == null || customAmount.getValue().isEmpty()) {
+            return 0;
         }
-        return CHIPS[chipIndex];
+        try {
+            return Long.parseLong(customAmount.getValue());
+        } catch (NumberFormatException tooLong) {
+            // Twelve digits of nines overflows a long. Treated as nothing
+            // built up yet rather than crashing the click that triggered it.
+            return 0;
+        }
+    }
+
+    /** Adds one of this denomination to the stack in hand. */
+    private void addChip(int index) {
+        customAmount.setValue(String.valueOf(pendingAmount() + CHIPS[index]));
+    }
+
+    /** Takes one of this denomination back off the stack, down to nothing. */
+    private void removeChip(int index) {
+        long updated = Math.max(0, pendingAmount() - CHIPS[index]);
+        customAmount.setValue(updated == 0 ? "" : String.valueOf(updated));
     }
 
     /**
@@ -431,40 +455,45 @@ public class RouletteScreen extends TableScreen {
         }
     }
 
-    private boolean usingCustomAmount() {
-        return customAmount != null && !customAmount.getValue().isEmpty();
-    }
-
     private void renderControls(GuiGraphics graphics, int mouseX, int mouseY,
                                 RouletteStatePayload state) {
         int chipY = top + CHIP_ROW_Y;
+        long pending = pendingAmount();
         for (int i = 0; i < CHIPS.length; i++) {
             int x = left + 8 + i * (CHIP_W + 2);
-            // Only affordability greys a chip out. A denomination below the
-            // table minimum is still perfectly usable — the minimum is what a
-            // whole wager has to reach, not what a single chip has to be
-            // worth, and a table taking wagers from 10 up should still let
-            // somebody build one out of fives.
+            // Greys out once adding this chip would put the stack in hand
+            // past what is placeable, not when the denomination alone would —
+            // a chip that still fits on top of what is already built up stays
+            // usable, and one that would not is refused before the click that
+            // would waste it.
             // Placeable, not balance: credits riding on another table are
             // spoken for, and this one will refuse a chip built out of them.
-            // What is already on this felt is not subtracted because the
-            // table's own rules make room for the wagers it is holding.
-            boolean usable = state.placeable() >= CHIPS[i];
-            boolean selected = i == chipIndex && !usingCustomAmount();
+            boolean usable = state.placeable() >= pending + CHIPS[i];
 
-            drawButton(graphics, x, chipY, CHIP_W, CHIP_H,
-                    selected ? 0xFFE0B33A : 0xFF9A9A9A,
+            drawButton(graphics, x, chipY, CHIP_W, CHIP_H, 0xFF9A9A9A,
                     isOver(mouseX, mouseY, x, chipY, CHIP_W, CHIP_H));
 
             String label = CHIPS[i] >= 1000 ? (CHIPS[i] / 1000) + "k" : String.valueOf(CHIPS[i]);
             graphics.drawString(font, label, x + (CHIP_W - font.width(label)) / 2, chipY + 4,
-                    selected ? 0xFF000000 : (usable ? 0xFFFFFFFF : 0xFF7A5050), false);
+                    usable ? 0xFFFFFFFF : 0xFF7A5050, false);
         }
 
         int buttonY = top + BUTTON_ROW_Y;
-        drawLabeledButton(graphics, mouseX, mouseY, buttonX(0), buttonY,
-                Component.translatable("tablegames.roulette.clear"),
-                state.isSeated() && state.bettingOpen() ? 0xFF8A3A3A : 0xFF4A3030);
+        // The same slot "Clear bets" usually sits in, because the two never
+        // apply at once: there is nothing to repeat onto a felt that already
+        // has chips on it, and nothing to clear off one that does not.
+        if (offeringRepeat(state)) {
+            int repeatX = buttonX(0);
+            int doubleX = repeatX + HALF_BUTTON_W + BUTTON_GAP;
+            drawLabeledButton(graphics, mouseX, mouseY, repeatX, buttonY, HALF_BUTTON_W,
+                    Component.translatable("tablegames.roulette.repeat_bet"), 0xFF3A5B8A);
+            drawLabeledButton(graphics, mouseX, mouseY, doubleX, buttonY, HALF_BUTTON_W,
+                    Component.translatable("tablegames.roulette.double_bet"), 0xFF8A4B1E);
+        } else {
+            drawLabeledButton(graphics, mouseX, mouseY, buttonX(0), buttonY,
+                    Component.translatable("tablegames.roulette.clear"),
+                    state.isSeated() && state.bettingOpen() ? 0xFF8A3A3A : 0xFF4A3030);
+        }
 
         // The right-hand button changes with what the player can actually do,
         // rather than showing a spin control to somebody with no seat. There
@@ -563,10 +592,43 @@ public class RouletteScreen extends TableScreen {
 
     private void drawLabeledButton(GuiGraphics graphics, int mouseX, int mouseY,
                                    int x, int y, Component label, int face) {
-        drawButton(graphics, x, y, BUTTON_W, CHIP_H, face,
-                isOver(mouseX, mouseY, x, y, BUTTON_W, CHIP_H));
+        drawLabeledButton(graphics, mouseX, mouseY, x, y, BUTTON_W, label, face);
+    }
+
+    private void drawLabeledButton(GuiGraphics graphics, int mouseX, int mouseY,
+                                   int x, int y, int w, Component label, int face) {
+        drawButton(graphics, x, y, w, CHIP_H, face, isOver(mouseX, mouseY, x, y, w, CHIP_H));
         graphics.drawString(font, label,
-                x + (BUTTON_W - font.width(label)) / 2, y + 4, 0xFFFFFFFF, false);
+                x + (w - font.width(label)) / 2, y + 4, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * Whether "repeat" and "double" belong in the clear-bets slot right now.
+     * <p>
+     * Only when there is nothing on the felt yet this round to conflict with,
+     * betting is still open, and a settled round left something to rebuild.
+     */
+    private boolean offeringRepeat(RouletteStatePayload state) {
+        return state.isSeated() && state.bettingOpen() && state.myBets().isEmpty()
+                && !ClientRouletteState.lastSettledBets().isEmpty();
+    }
+
+    /**
+     * Resends every wager from the last settled round, each scaled the same
+     * way. Nothing here is trusted more than an ordinary click: every line
+     * goes through the same {@code placeBet} the server checks a felt click
+     * against, position by position.
+     *
+     * @param multiplier 1 to repeat exactly, 2 to double
+     */
+    private void replay(int multiplier) {
+        for (RouletteStatePayload.Wager wager : ClientRouletteState.lastSettledBets()) {
+            BetType type = wager.type();
+            PacketDistributor.sendToServer(RouletteActionPayload.place(tablePos, type,
+                    type.requiresTarget() ? pocketOf(wager) : null,
+                    wager.amount() * multiplier));
+        }
+        click();
     }
 
     private void renderHover(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -597,17 +659,32 @@ public class RouletteScreen extends TableScreen {
         for (int i = 0; i < CHIPS.length; i++) {
             int x = left + 8 + i * (CHIP_W + 2);
             if (isOver(mx, my, x, chipY, CHIP_W, CHIP_H)) {
-                chipIndex = i;
-                // Picking a chip clears the field. Leaving both sets would
-                // mean the highlighted chip was not what a click would stake.
-                customAmount.setValue("");
+                // Right-click takes one back off the stack, the way you'd
+                // hand a chip back rather than set the whole thing down.
+                if (button == 1) {
+                    removeChip(i);
+                } else {
+                    addChip(i);
+                }
                 click();
                 return true;
             }
         }
 
         int buttonY = top + BUTTON_ROW_Y;
-        if (isOver(mx, my, buttonX(0), buttonY, BUTTON_W, CHIP_H)) {
+        RouletteStatePayload forFirstSlot = ClientRouletteState.state();
+        if (offeringRepeat(forFirstSlot)) {
+            int repeatX = buttonX(0);
+            int doubleX = repeatX + HALF_BUTTON_W + BUTTON_GAP;
+            if (isOver(mx, my, repeatX, buttonY, HALF_BUTTON_W, CHIP_H)) {
+                replay(1);
+                return true;
+            }
+            if (isOver(mx, my, doubleX, buttonY, HALF_BUTTON_W, CHIP_H)) {
+                replay(2);
+                return true;
+            }
+        } else if (isOver(mx, my, buttonX(0), buttonY, BUTTON_W, CHIP_H)) {
             send(RouletteActionPayload.clear(tablePos));
             return true;
         }
@@ -643,11 +720,28 @@ public class RouletteScreen extends TableScreen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-    /** The mouse wheel steps through chip values, like reaching for a stack. */
+    /**
+     * Scrolling over a chip is the same as clicking it, repeatedly. Piling on
+     * five twenty-fives is a lot of clicking otherwise, and a scroll under
+     * the cursor is the more natural motion for "more of this one".
+     */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
-        chipIndex = Math.clamp(chipIndex + (int) Math.signum(deltaY), 0, CHIPS.length - 1);
-        return true;
+        int mx = (int) mouseX;
+        int my = (int) mouseY;
+        int chipY = top + CHIP_ROW_Y;
+        for (int i = 0; i < CHIPS.length; i++) {
+            int x = left + 8 + i * (CHIP_W + 2);
+            if (isOver(mx, my, x, chipY, CHIP_W, CHIP_H)) {
+                if (deltaY > 0) {
+                    addChip(i);
+                } else if (deltaY < 0) {
+                    removeChip(i);
+                }
+                return true;
+            }
+        }
+        return super.mouseScrolled(mouseX, mouseY, deltaX, deltaY);
     }
 
     // --- Helpers ----------------------------------------------------------------
@@ -666,6 +760,15 @@ public class RouletteScreen extends TableScreen {
         }
         return Pocket.of(spot.number(),
                 isRed(spot.number()) ? PocketColor.RED : PocketColor.BLACK);
+    }
+
+    /** The same rebuild as {@link #pocketOf(Spot)}, from a wager off the wire. */
+    private static Pocket pocketOf(RouletteStatePayload.Wager wager) {
+        if (wager.targetNumber() == 0) {
+            return wager.targetDoubleZero() ? Pocket.doubleZeroPocket() : Pocket.zero();
+        }
+        return Pocket.of(wager.targetNumber(),
+                isRed(wager.targetNumber()) ? PocketColor.RED : PocketColor.BLACK);
     }
 
     private static boolean isRed(int number) {

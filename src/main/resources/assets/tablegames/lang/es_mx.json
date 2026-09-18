@@ -84,6 +84,8 @@
   "tablegames.roulette.result": "La bola cayó en el %s",
   "tablegames.roulette.custom_amount": "Cantidad",
   "tablegames.roulette.clear": "Quitar apuestas",
+  "tablegames.roulette.repeat_bet": "Repetir",
+  "tablegames.roulette.double_bet": "Doblar",
   "tablegames.roulette.pays": "Paga %s a 1",
   "tablegames.roulette.your_stake": "Tienes %s aquí",
   "tablegames.roulette.betting_closed": "Las apuestas están cerradas en esta ronda",

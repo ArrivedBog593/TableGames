@@ -84,6 +84,8 @@
   "tablegames.roulette.result": "The ball landed on %s",
   "tablegames.roulette.custom_amount": "Amount",
   "tablegames.roulette.clear": "Clear bets",
+  "tablegames.roulette.repeat_bet": "Repeat",
+  "tablegames.roulette.double_bet": "Double",
   "tablegames.roulette.pays": "Pays %s to 1",
   "tablegames.roulette.your_stake": "You have %s here",
   "tablegames.roulette.betting_closed": "Betting is closed for this round",

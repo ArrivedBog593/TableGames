@@ -1,6 +1,9 @@
 package com.github.arrivedbog593.tablegames.client;
 
+import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
+
+import java.util.List;
 
 /**
  * The roulette round the server last described, for the screen to draw.
@@ -15,6 +18,16 @@ public final class ClientRouletteState {
 
     /** When a winning pocket first appeared, for timing the wheel animation. */
     private static long resultArrivedAt;
+
+    /**
+     * What the viewer had on the felt the last time a spin actually settled.
+     * <p>
+     * Captured here rather than remembered by the screen, because a screen
+     * is thrown away and rebuilt every time the player reopens the table,
+     * while this survives for as long as the game does — closing and
+     * reopening the table should not cost you the bet "repeat" would rebuild.
+     */
+    private static List<RouletteStatePayload.Wager> lastSettledBets = List.of();
 
     private ClientRouletteState() {
     }
@@ -31,7 +44,25 @@ public final class ClientRouletteState {
         } else if (!payload.hasResult()) {
             resultArrivedAt = 0;
         }
+
+        // Snapshotted from the phase, not from "bets went from something to
+        // nothing" — that also happens the moment a player clears their own
+        // bets mid-round, and a manual clear is not a settled round with
+        // something worth repeating. By the time RESULT arrives the felt has
+        // already been swept for the next round, so what "repeat" needs has
+        // to come from the state just before this one, not from this packet.
+        if (payload.phase() == RoundPhase.RESULT && !state.myBets().isEmpty()) {
+            lastSettledBets = state.myBets();
+        }
         state = payload;
+    }
+
+    /**
+     * What to rebuild for "repeat" or "double", from the last round the
+     * viewer actually had something riding on. Empty when they never have.
+     */
+    public static List<RouletteStatePayload.Wager> lastSettledBets() {
+        return lastSettledBets;
     }
 
     /**
