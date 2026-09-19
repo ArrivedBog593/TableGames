@@ -144,6 +144,8 @@ public final class TableCommands {
         source.sendSuccess(() -> Component.translatable(
                 "tablegames.command.table.assigned",
                 Component.translatable(game.get().translationKey())), true);
+        source.sendSuccess(() -> Component.translatable(
+                "tablegames.table.not_configured"), false);
         return 1;
     }
 
@@ -221,7 +223,15 @@ public final class TableCommands {
                 maximum == BetLimits.UNLIMITED
                         ? Component.translatable("tablegames.command.table.limits_none")
                         : Component.literal(CreditFormat.of(maximum))), true);
+        reportIfPending(source, table);
         return 1;
+    }
+
+    private static void reportIfPending(CommandSourceStack source, TableBlockEntity table) {
+        if (table.hasPendingSettings()) {
+            source.sendSuccess(() -> Component.translatable(
+                    "tablegames.command.table.settings_pending"), false);
+        }
     }
 
     /**
@@ -242,6 +252,7 @@ public final class TableCommands {
         table.applySettings(cleared);
         source.sendSuccess(() -> Component.translatable(
                 "tablegames.command.table.limits_cleared"), true);
+        reportIfPending(source, table);
         return 1;
     }
 
@@ -271,6 +282,10 @@ public final class TableCommands {
         MutableComponent title = Component.translatable(assigned.translationKey())
                 .withStyle(ChatFormatting.GOLD);
         source.sendSuccess(() -> title, false);
+        if (!table.isConfigured()) {
+            source.sendSuccess(() -> Component.translatable(
+                    "tablegames.table.not_configured").withStyle(ChatFormatting.YELLOW), false);
+        }
 
         RoundPhase phase = table.phase();
         source.sendSuccess(() -> Component.translatable(

@@ -2,6 +2,7 @@ package com.github.arrivedbog593.tablegames.platform.registry;
 
 import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.platform.item.AdminKeyItem;
+import com.github.arrivedbog593.tablegames.platform.item.TableKeyItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.neoforged.bus.api.IEventBus;
@@ -32,6 +33,14 @@ public final class ModItems {
      */
     public static final DeferredItem<AdminKeyItem> ADMIN_KEY =
             ITEMS.register("admin_key", () -> new AdminKeyItem(new Item.Properties()));
+
+    /**
+     * Opens a table's settings, for anybody allowed to change them.
+     * <p>
+     * No recipe yet; the ingredients are still to be decided.
+     */
+    public static final DeferredItem<TableKeyItem> TABLE_KEY =
+            ITEMS.register("table_key", () -> new TableKeyItem(new Item.Properties()));
 
     private ModItems() {
     }

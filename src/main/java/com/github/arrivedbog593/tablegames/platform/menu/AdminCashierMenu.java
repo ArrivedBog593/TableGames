@@ -2,6 +2,7 @@ package com.github.arrivedbog593.tablegames.platform.menu;
 
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.item.AdminKeyItem;
+import com.github.arrivedbog593.tablegames.platform.registry.ModBlocks;
 import com.github.arrivedbog593.tablegames.platform.registry.ModMenus;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
@@ -118,8 +119,8 @@ public class AdminCashierMenu extends AbstractContainerMenu {
                 && !AdminKeyItem.mayAdminister(server, server.getMainHandItem())) {
             return false;
         }
-        return access.evaluate((level, pos) ->
-                who.distanceToSqr(pos.getCenter()) <= 64.0, true);
+        // Vanilla's check covers the block still being there as well as reach.
+        return stillValid(access, who, ModBlocks.cashier());
     }
 
     @Override

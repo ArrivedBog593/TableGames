@@ -1,6 +1,10 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
 import com.github.arrivedbog593.tablegames.engine.game.Game;
+import com.github.arrivedbog593.tablegames.platform.item.AdminKeyItem;
+import com.github.arrivedbog593.tablegames.platform.item.TableKeyItem;
+import com.github.arrivedbog593.tablegames.platform.network.OpenGamePickerPayload;
+import com.github.arrivedbog593.tablegames.platform.network.OpenTableConfigPayload;
 import com.github.arrivedbog593.tablegames.platform.network.OpenTableScreenPayload;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlockEntities;
@@ -9,7 +13,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -131,11 +137,63 @@ public class TableBlock extends BaseEntityBlock {
     }
 
     /**
-     * Opens the table's screen.
+     * Either key opens the table's setup instead of the game.
+     * <p>
+     * Only a configured table needs one: an empty or half set up table opens
+     * its setup on a bare click already. The keys grant nothing: whether the
+     * setup opens is the table's decision, the same one its commands ask. The
+     * click is consumed when the answer is no, because falling through would
+     * open the game, which reads as the key having worked.
+     */
+    @Override
+    protected @NotNull ItemInteractionResult useItemOn(ItemStack stack, @NotNull BlockState state,
+                                                       @NotNull Level level, @NotNull BlockPos pos,
+                                                       @NotNull Player player,
+                                                       @NotNull InteractionHand hand,
+                                                       @NotNull BlockHitResult hit) {
+        if (!(stack.getItem() instanceof TableKeyItem) && !(stack.getItem() instanceof AdminKeyItem)) {
+            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        }
+        if (level.isClientSide) {
+            return ItemInteractionResult.SUCCESS;
+        }
+        if (!(level.getBlockEntity(pos) instanceof TableBlockEntity table)
+                || !(player instanceof ServerPlayer serverPlayer)) {
+            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        }
+        if (!table.mayConfigure(serverPlayer)) {
+            serverPlayer.displayClientMessage(
+                    Component.translatable("tablegames.command.table.not_yours"), true);
+            return ItemInteractionResult.CONSUME;
+        }
+        openSetup(serverPlayer, table);
+        return ItemInteractionResult.CONSUME;
+    }
+
+    /**
+     * Shows whichever setup step the table is at: the list of games when it
+     * hosts none, that game's settings once one is chosen.
+     * <p>
+     * Callers check the player may configure the table first.
+     */
+    public static void openSetup(ServerPlayer player, TableBlockEntity table) {
+        if (table.game().isEmpty()) {
+            PacketDistributor.sendToPlayer(player,
+                    new OpenGamePickerPayload(table.getBlockPos()));
+        } else {
+            PacketDistributor.sendToPlayer(player, OpenTableConfigPayload.of(table));
+        }
+    }
+
+    /**
+     * Opens the table's screen, or its setup when it is not ready to play.
      * <p>
      * No menu is involved. Table games are not containers, so the server tells
      * the client which screen to open, and the client opens it. See
      * {@code OpenTableScreenPayload} for why.
+     * <p>
+     * A table that is not ready walks whoever may set it up through the next
+     * step with no key needed, and tells everybody else to come back later.
      */
     @Override
     protected @NotNull InteractionResult useWithoutItem(@NotNull BlockState state, Level level, @NotNull BlockPos pos,
@@ -149,9 +207,14 @@ public class TableBlock extends BaseEntityBlock {
         }
 
         Optional<Game> assigned = table.game();
-        if (assigned.isEmpty()) {
-            player.displayClientMessage(
-                    Component.translatable("tablegames.table.unassigned"), false);
+        if (assigned.isEmpty() || !table.isConfigured()) {
+            if (table.mayConfigure(serverPlayer)) {
+                openSetup(serverPlayer, table);
+            } else {
+                player.displayClientMessage(Component.translatable(assigned.isEmpty()
+                        ? "tablegames.table.unassigned"
+                        : "tablegames.table.being_set_up"), true);
+            }
             return InteractionResult.CONSUME;
         }
 

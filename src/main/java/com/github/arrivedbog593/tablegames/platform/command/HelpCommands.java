@@ -90,10 +90,13 @@ public final class HelpCommands {
             new Entry("/tablegames shop price <entry> <price>", "tablegames.help.shop_price", true),
             new Entry("/tablegames shop remove <entry>", "tablegames.help.shop_remove", true),
 
-            new Entry("/tablegames admin key", "tablegames.help.admin_key", false),
-            new Entry("/tablegames admin list", "tablegames.help.admin_list", true),
-            new Entry("/tablegames admin give <player>", "tablegames.help.admin_give", true),
-            new Entry("/tablegames admin revoke <player>", "tablegames.help.admin_revoke", true));
+            new Entry("/tablegames staff key", "tablegames.help.staff_key", false),
+            new Entry("/tablegames staff list", "tablegames.help.staff_list", true),
+            new Entry("/tablegames staff add <player> moderator",
+                    "tablegames.help.staff_add_moderator", true),
+            new Entry("/tablegames staff add <player> admin",
+                    "tablegames.help.staff_add_admin", true),
+            new Entry("/tablegames staff remove <player>", "tablegames.help.staff_remove", true));
 
     private HelpCommands() {
     }

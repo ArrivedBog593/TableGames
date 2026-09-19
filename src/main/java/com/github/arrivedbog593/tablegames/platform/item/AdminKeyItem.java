@@ -22,8 +22,9 @@ import java.util.UUID;
 /**
  * Opens a casino block's settings instead of using it.
  * <p>
- * The card is a key, not the permission. Who may administer the casino lives
- * in a list on {@link EconomyData}; the card only says, "I am here to
+ * One card for every staff rank. The card is a key, not the permission: who
+ * may administer the casino, and how far, lives on {@link EconomyData}; the
+ * card only says, "I am here to
  * configure rather than to play". Splitting the two is what makes revoking
  * somebody instant: taking them off the list stops every card they hold,
  * including the ones already in their pockets and the ones nobody can find.
@@ -89,7 +90,7 @@ public class AdminKeyItem extends Item {
         // an unbound card would work for anyone, and a bound one would keep
         // working after they were removed.
         return ownerOf(held).filter(player.getUUID()::equals).isPresent()
-                && EconomyData.get(player.server).isAdministrator(player.getUUID());
+                && EconomyData.get(player.server).isStaff(player.getUUID());
     }
 
     /**

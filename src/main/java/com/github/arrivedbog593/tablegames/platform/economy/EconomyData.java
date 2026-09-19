@@ -6,7 +6,6 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.IntArrayTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
@@ -20,12 +19,10 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -56,7 +53,9 @@ public final class EconomyData extends SavedData {
     private static final String KEY_EXPOSURE_PERCENT = "house_exposure_percent";
     private static final String KEY_MINIMUM_RESERVE = "house_minimum_reserve";
     private static final String KEY_SPREAD_PERCENT = "buyback_spread_percent";
-    private static final String KEY_ADMINISTRATORS = "administrators";
+    private static final String KEY_STAFF = "staff";
+    private static final String KEY_STAFF_ID = "id";
+    private static final String KEY_STAFF_RANK = "rank";
 
     public static final SavedData.Factory<EconomyData> FACTORY =
             new SavedData.Factory<>(EconomyData::new, EconomyData::load, null);
@@ -76,14 +75,14 @@ public final class EconomyData extends SavedData {
     private int spreadPercent = CreditValueTable.NO_SPREAD;
 
     /**
-     * Who may configure the casino without being an operator.
+     * Who may configure the casino without being an operator, and how far.
      * <p>
      * The permission itself, not a record of who holds a card. Revoking is
      * therefore instant and complete: a card still in somebody's pocket, or
      * in a chest nobody can find, stops opening anything the moment its owner
-     * leaves this set.
+     * leaves this map.
      */
-    private final Set<UUID> administrators = new LinkedHashSet<>();
+    private final Map<UUID, StaffRank> staff = new LinkedHashMap<>();
 
     private EconomyData() {
     }
@@ -98,13 +97,13 @@ public final class EconomyData extends SavedData {
         if (tag.contains(KEY_MINIMUM_RESERVE)) {
             data.minimumReserve = Math.max(0, tag.getLong(KEY_MINIMUM_RESERVE));
         }
-        if (tag.contains(KEY_ADMINISTRATORS)) {
-            ListTag listed = tag.getList(KEY_ADMINISTRATORS, Tag.TAG_INT_ARRAY);
-            for (int i = 0; i < listed.size(); i++) {
-                int[] raw = listed.getIntArray(i);
-                if (raw.length == 4) {
-                    data.administrators.add(UUIDUtil.uuidFromIntArray(raw));
-                }
+        ListTag listed = tag.getList(KEY_STAFF, Tag.TAG_COMPOUND);
+        for (int i = 0; i < listed.size(); i++) {
+            CompoundTag member = listed.getCompound(i);
+            int[] raw = member.getIntArray(KEY_STAFF_ID);
+            Optional<StaffRank> rank = StaffRank.byId(member.getString(KEY_STAFF_RANK));
+            if (raw.length == 4 && rank.isPresent()) {
+                data.staff.put(UUIDUtil.uuidFromIntArray(raw), rank.get());
             }
         }
         if (tag.contains(KEY_SPREAD_PERCENT)) {
@@ -132,10 +131,13 @@ public final class EconomyData extends SavedData {
         tag.putInt(KEY_SPREAD_PERCENT, spreadPercent);
 
         ListTag listed = new ListTag();
-        for (UUID administrator : administrators) {
-            listed.add(new IntArrayTag(UUIDUtil.uuidToIntArray(administrator)));
-        }
-        tag.put(KEY_ADMINISTRATORS, listed);
+        staff.forEach((member, rank) -> {
+            CompoundTag entry = new CompoundTag();
+            entry.putIntArray(KEY_STAFF_ID, UUIDUtil.uuidToIntArray(member));
+            entry.putString(KEY_STAFF_RANK, rank.id());
+            listed.add(entry);
+        });
+        tag.put(KEY_STAFF, listed);
         return tag;
     }
 
@@ -213,32 +215,48 @@ public final class EconomyData extends SavedData {
     }
 
     /**
-     * Whether this player is on the administration list.
+     * This player's staff rank, if they have one.
      * <p>
      * Says nothing about operators, who need no listing. Callers that mean
      * "may configure the casino" should be asking
      * {@code AdminKeyItem.mayAdminister} instead, which covers both.
      */
-    public boolean isAdministrator(UUID playerId) {
-        return administrators.contains(playerId);
+    public Optional<StaffRank> rankOf(UUID playerId) {
+        return Optional.ofNullable(staff.get(playerId));
     }
 
-    public Set<UUID> administrators() {
-        return Set.copyOf(administrators);
+    /** Whether this player holds any staff rank at all. */
+    public boolean isStaff(UUID playerId) {
+        return staff.containsKey(playerId);
     }
 
-    /** @return false if they were already listed */
-    public boolean addAdministrator(UUID playerId) {
-        if (!administrators.add(playerId)) {
-            return false;
+    /** Whether this player's rank reaches tables they do not own. */
+    public boolean managesEveryTable(UUID playerId) {
+        return rankOf(playerId).filter(StaffRank::managesEveryTable).isPresent();
+    }
+
+    /** Every listed member and their rank, in the order they were listed. Unmodifiable. */
+    public Map<UUID, StaffRank> staff() {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(staff));
+    }
+
+    /**
+     * Lists somebody at this rank, or moves them to it.
+     *
+     * @return the rank they held before, empty if they were not listed
+     */
+    public Optional<StaffRank> setRank(UUID playerId, StaffRank rank) {
+        Objects.requireNonNull(rank, "rank");
+        StaffRank previous = staff.put(playerId, rank);
+        if (previous != rank) {
+            setDirty();
         }
-        setDirty();
-        return true;
+        return Optional.ofNullable(previous);
     }
 
     /** @return false if they were not listed to begin with */
-    public boolean removeAdministrator(UUID playerId) {
-        if (!administrators.remove(playerId)) {
+    public boolean removeStaff(UUID playerId) {
+        if (staff.remove(playerId) == null) {
             return false;
         }
         setDirty();

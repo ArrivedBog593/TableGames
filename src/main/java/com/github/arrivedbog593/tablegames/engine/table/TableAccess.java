@@ -72,30 +72,34 @@ public final class TableAccess {
     /**
      * Whether this player decides who may configure the table.
      * <p>
-     * The owner and operators, and deliberately not the people on the list.
-     * Sharing the sharing would be an escalation with no way back: anyone
-     * added could add anybody, or drop the owner's other guests.
+     * The owner and whoever has authority over every table, and deliberately
+     * not the people on the list. Sharing the sharing would be an escalation
+     * with no way back: anyone added could add anybody, or drop the owner's
+     * other guests.
      *
-     * @param operator whether the server counts this player as an operator
+     * @param authority whether the server lets this player manage any table:
+     *                  an operator, or staff of a rank that reaches tables
      */
-    public boolean mayShare(UUID playerId, boolean operator) {
-        return operator || playerId.equals(owner);
+    public boolean mayShare(UUID playerId, boolean authority) {
+        return authority || playerId.equals(owner);
     }
 
     /**
      * Whether this player may change what the table hosts and what it takes.
      * <p>
-     * Three ways in. An operator runs the server. The owner placed this
-     * particular block. The rest are people the owner shared it with, which
-     * is what makes a table in a shared base usable by the people who share
-     * it.
+     * Three ways in. Authority over every table, which the server grants. The
+     * owner placed this particular block. The rest are people the owner
+     * shared it with, which is what makes a table in a shared base usable by
+     * the people who share it.
      * <p>
      * A table with no owner — one that predates ownership, or that something
-     * other than a player put down — is operator business. It does not become
+     * other than a player put down — needs that authority. It does not become
      * unowned property that the next passer-by may reconfigure.
+     *
+     * @param authority as for {@link #mayShare}
      */
-    public boolean mayConfigure(UUID playerId, boolean operator) {
-        return operator || playerId.equals(owner) || trusted.contains(playerId);
+    public boolean mayConfigure(UUID playerId, boolean authority) {
+        return authority || playerId.equals(owner) || trusted.contains(playerId);
     }
 
     /** Whether there is nothing here worth writing to disk. */

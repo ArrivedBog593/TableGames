@@ -49,7 +49,7 @@ public final class AdminNotices {
                 continue;
             }
             if (other.hasPermissions(2)
-                    || EconomyData.get(server).isAdministrator(other.getUUID())) {
+                    || EconomyData.get(server).isStaff(other.getUUID())) {
                 other.sendSystemMessage(attributed);
             }
         }

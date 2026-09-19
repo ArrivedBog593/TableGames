@@ -19,13 +19,10 @@ import org.jetbrains.annotations.NotNull;
  * and draw one underneath whether or not it belongs there.
  * <p>
  * The trade is that nothing tells the server when this closes, and nothing
- * closes it when the player wanders off. Both are handled here so no
- * individual game has to remember.
+ * closes it when the player wanders off or the table is broken. Both are
+ * handled here so no individual game has to remember.
  */
 public abstract class TableScreen extends Screen {
-
-    /** Beyond this the player has clearly walked away from the table. */
-    private static final double MAX_DISTANCE_SQUARED = 64.0;
 
     protected final BlockPos tablePos;
 
@@ -55,9 +52,8 @@ public abstract class TableScreen extends Screen {
         super.tick();
         // A container screen gets this from stillValid. A plain one has to
         // watch for itself, or a player can walk to the next room and keep
-        // betting on a table they cannot see.
-        if (minecraft != null && minecraft.player != null
-                && minecraft.player.distanceToSqr(tablePos.getCenter()) > MAX_DISTANCE_SQUARED) {
+        // betting on a table they cannot see, or stare at one that was broken.
+        if (TablePresence.lost(minecraft, tablePos)) {
             onClose();
         }
     }

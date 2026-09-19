@@ -20,6 +20,7 @@ import com.github.arrivedbog593.tablegames.engine.table.TableOccupancy;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
+import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
@@ -82,6 +83,7 @@ public class TableBlockEntity extends BlockEntity {
     private static final String KEY_OWNER = "owner";
     private static final String KEY_TRUSTED = "trusted";
     private static final String KEY_SETTINGS = "settings";
+    private static final String KEY_CONFIGURED = "configured";
 
     /** Seats a table has before a game says otherwise. */
     private static final int UNASSIGNED_SEATS = 1;
@@ -100,6 +102,26 @@ public class TableBlockEntity extends BlockEntity {
      * back finds the limits it used to post still there.
      */
     private TableSettings settings = TableSettings.empty();
+
+    /**
+     * A configuration accepted while chips were on the felt, waiting for the
+     * round to end. Null when there is none.
+     * <p>
+     * The spin replays every wager under the limits in force at that moment,
+     * so tightening them under a live bet would have the engine refuse a
+     * stake this table already took.
+     */
+    private TableSettings pendingSettings;
+
+    /**
+     * Whether somebody has gone through the game's settings since it was
+     * assigned.
+     * <p>
+     * Choosing a game is not enough to play it. Nobody may open or sit at the
+     * table until whoever set it up has confirmed what it takes, so a table
+     * never goes live on defaults nobody looked at.
+     */
+    private boolean configured;
 
     /**
      * Who this table belongs to and who else may set it up.
@@ -164,6 +186,11 @@ public class TableBlockEntity extends BlockEntity {
         return gameId;
     }
 
+    /** Whether a game is assigned and its settings were confirmed, so it may be played. */
+    public boolean isConfigured() {
+        return configured && game().isPresent();
+    }
+
     /** Whose table this is if anybody's. */
     public Optional<UUID> owner() {
         return access.owner();
@@ -204,21 +231,25 @@ public class TableBlockEntity extends BlockEntity {
 
     /** Whether this player decides who may configure the table. */
     public boolean mayShare(ServerPlayer player) {
-        return access.mayShare(player.getUUID(), player.hasPermissions(2));
+        return access.mayShare(player.getUUID(), hasAuthorityOverTables(player));
+    }
+
+    /** Whether this player may change what the table hosts and what it takes. */
+    public boolean mayConfigure(ServerPlayer player) {
+        return access.mayConfigure(player.getUUID(), hasAuthorityOverTables(player));
     }
 
     /**
-     * Whether this player may change what the table hosts and what it takes.
+     * Operators, and staff at a rank that reaches every table.
      * <p>
-     * Being on the casino's administration list is not one of the ways in:
-     * that list is authority over the economy — the shop, the conversion
-     * values, the bankroll — and a table is a block somebody put down, which
-     * may as easily be in their own base as in the casino. An administrator
-     * who needs a table configures the ones they placed, and an operator
-     * settles anything else.
+     * A moderator is not enough. That rank is authority over the economy —
+     * the shop, the conversion values, the bankroll — and a table is a block
+     * somebody put down, which may as easily be in their own base as in the
+     * casino.
      */
-    public boolean mayConfigure(ServerPlayer player) {
-        return access.mayConfigure(player.getUUID(), player.hasPermissions(2));
+    private static boolean hasAuthorityOverTables(ServerPlayer player) {
+        return player.hasPermissions(2)
+                || EconomyData.get(player.server).managesEveryTable(player.getUUID());
     }
 
     /**
@@ -232,6 +263,7 @@ public class TableBlockEntity extends BlockEntity {
         abandon();
         occupancy.clear();
         this.gameId = game == null ? "" : game.id();
+        this.configured = false;
         this.occupancy = new TableOccupancy(
                 game == null ? UNASSIGNED_SEATS : Math.max(1, game.maxPlayers()));
         setChanged();
@@ -298,7 +330,7 @@ public class TableBlockEntity extends BlockEntity {
 
     /** Takes a seat if the game allows it and the round is not locked. */
     public SeatChange sit(UUID playerId) {
-        if (game().isEmpty()) {
+        if (!isConfigured()) {
             return SeatChange.NOT_AT_TABLE;
         }
         SeatChange change = occupancy.sit(playerId, phase());
@@ -457,15 +489,27 @@ public class TableBlockEntity extends BlockEntity {
         return roulette().map(game -> game.limitsFrom(settings)).orElse(BetLimits.DEFAULT);
     }
 
-    /** How this table is set up. */
+    /**
+     * How this table is set up, counting a change still waiting for the round
+     * to end. What anybody editing the table should start from.
+     */
     public TableSettings settings() {
-        return settings;
+        return pendingSettings != null ? pendingSettings : settings;
+    }
+
+    /** Whether the last accepted configuration is waiting for the round to end. */
+    public boolean hasPendingSettings() {
+        return pendingSettings != null;
     }
 
     /**
      * Takes a whole configuration at once, or refuses it whole.
+     * <p>
+     * With chips on the felt it is held until the round ends instead of
+     * applied; see {@link #pendingSettings}. Either way it counts as the
+     * table having been set up, which is what lets it be played.
      *
-     * @return the problem the assigned game found, or empty when it was applied
+     * @return the problem the assigned game found, or empty when it was accepted
      */
     public Optional<String> applySettings(TableSettings proposed) {
         Objects.requireNonNull(proposed, "proposed");
@@ -473,10 +517,24 @@ public class TableBlockEntity extends BlockEntity {
         if (problem.isPresent()) {
             return problem;
         }
-        this.settings = proposed;
+        if (layout.isEmpty()) {
+            this.settings = proposed;
+            this.pendingSettings = null;
+        } else {
+            this.pendingSettings = proposed;
+        }
+        this.configured = game().isPresent();
         setChanged();
         markDirty();
         return Optional.empty();
+    }
+
+    private void applyPendingSettings() {
+        if (pendingSettings != null) {
+            settings = pendingSettings;
+            pendingSettings = null;
+            setChanged();
+        }
     }
 
     /** The assigned game when it is a roulette, which is what posts limits. */
@@ -800,6 +858,7 @@ public class TableBlockEntity extends BlockEntity {
         // players get their credits back too: whatever was riding on this
         // round has either been paid or been lost by now.
         releaseCommitments();
+        applyPendingSettings();
         occupancy.clearReady();
         occupancy.noteRoundEnded(participants);
         markDirty();
@@ -814,6 +873,7 @@ public class TableBlockEntity extends BlockEntity {
     public void abandon() {
         releaseCommitments();
         layout.clearAll();
+        applyPendingSettings();
         window.reset();
         occupancy.clearReady();
         lastResult = null;
@@ -863,6 +923,7 @@ public class TableBlockEntity extends BlockEntity {
         this.gameId = tag.getString(KEY_GAME);
         readAccess(tag);
         this.settings = readSettings(tag);
+        this.configured = tag.getBoolean(KEY_CONFIGURED);
         this.occupancy = new TableOccupancy(game()
                 .map(assigned -> Math.max(1, assigned.maxPlayers()))
                 .orElse(UNASSIGNED_SEATS));
@@ -874,6 +935,7 @@ public class TableBlockEntity extends BlockEntity {
         tag.putString(KEY_GAME, gameId);
         writeAccess(tag);
         writeSettings(tag);
+        tag.putBoolean(KEY_CONFIGURED, configured);
     }
 
     /**
@@ -931,12 +993,14 @@ public class TableBlockEntity extends BlockEntity {
         tag.put(KEY_TRUSTED, stored);
     }
 
+    /** Writes a pending change as if applied: rounds are not saved, so it would be by reload. */
     private void writeSettings(CompoundTag tag) {
-        if (settings.isEmpty()) {
+        TableSettings toWrite = settings();
+        if (toWrite.isEmpty()) {
             return;
         }
         CompoundTag stored = new CompoundTag();
-        settings.values().forEach(stored::putLong);
+        toWrite.values().forEach(stored::putLong);
         tag.put(KEY_SETTINGS, stored);
     }
 

@@ -3,7 +3,7 @@ package com.github.arrivedbog593.tablegames.platform.economy;
 import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.engine.economy.TransactionRecord;
 import com.github.arrivedbog593.tablegames.engine.economy.TransactionType;
-import com.github.arrivedbog593.tablegames.platform.command.AdminCommands;
+import com.github.arrivedbog593.tablegames.platform.command.StaffCommands;
 import com.github.arrivedbog593.tablegames.platform.command.CreditCommands;
 import com.github.arrivedbog593.tablegames.platform.command.EconomyCommands;
 import com.github.arrivedbog593.tablegames.platform.command.HelpCommands;
@@ -133,7 +133,7 @@ public final class EconomyEvents {
         EconomyCommands.register(event.getDispatcher());
         TableCommands.register(event.getDispatcher());
         HouseCommands.register(event.getDispatcher());
-        AdminCommands.register(event.getDispatcher());
+        StaffCommands.register(event.getDispatcher());
     }
 
     @SubscribeEvent
