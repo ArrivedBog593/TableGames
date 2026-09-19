@@ -11,13 +11,17 @@ import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteLayout;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteSession;
 import com.github.arrivedbog593.tablegames.engine.session.ActionResult;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
+import com.github.arrivedbog593.tablegames.engine.session.Payout;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
 import com.github.arrivedbog593.tablegames.engine.table.BettingWindow;
+import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.engine.table.SeatChange;
 import com.github.arrivedbog593.tablegames.engine.table.TableAccess;
 import com.github.arrivedbog593.tablegames.engine.table.TableOccupancy;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
+import com.github.arrivedbog593.tablegames.engine.table.TableStacks;
+import com.github.arrivedbog593.tablegames.platform.economy.BuyInMessages;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
@@ -48,6 +52,7 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -150,6 +155,15 @@ public class TableBlockEntity extends BlockEntity {
      * around it.
      */
     private final RouletteLayout layout = new RouletteLayout();
+
+    /**
+     * What each seated player bought in with, for games that ask for it.
+     * <p>
+     * Reserved rather than taken: published as the player's commitment here,
+     * so no other table or counter may spend it, while the credits themselves
+     * stay in the balance and move only at settlement.
+     */
+    private final TableStacks stacks = new TableStacks();
 
     private Pocket lastResult;
 
@@ -262,6 +276,8 @@ public class TableBlockEntity extends BlockEntity {
     public void setGame(Game game) {
         abandon();
         occupancy.clear();
+        stacks.clear();
+        publishCommitments();
         this.gameId = game == null ? "" : game.id();
         this.configured = false;
         this.occupancy = new TableOccupancy(
@@ -328,16 +344,90 @@ public class TableBlockEntity extends BlockEntity {
         markDirty();
     }
 
-    /** Takes a seat if the game allows it and the round is not locked. */
-    public SeatChange sit(UUID playerId) {
+    /**
+     * Takes a seat, bringing a stack when the game asks for one.
+     *
+     * @param amount what to buy in with; ignored by a game without a buy-in
+     * @return why not, or null when seated
+     */
+    public Component sit(ServerPlayer player, long amount) {
+        UUID playerId = player.getUUID();
         if (!isConfigured()) {
-            return SeatChange.NOT_AT_TABLE;
+            return Component.translatable(SeatChange.NOT_AT_TABLE.translationKey());
+        }
+        Optional<BuyIn> buyIn = buyIn();
+        if (buyIn.isPresent() && !occupancy.isSeated(playerId)) {
+            Component refused = refusalFor(buyIn.get(), amount, 0, available(player));
+            if (refused != null) {
+                return refused;
+            }
         }
         SeatChange change = occupancy.sit(playerId, phase());
-        if (change.changed()) {
-            markDirty();
+        if (!change.changed()) {
+            return Component.translatable(change.translationKey());
         }
-        return change;
+        if (buyIn.isPresent()) {
+            stacks.add(playerId, amount);
+            publishCommitments();
+        }
+        markDirty();
+        return null;
+    }
+
+    /**
+     * Adds to a seated player's stack, between rounds only.
+     * <p>
+     * Not while the wheel is counting down: topping up is for somebody who
+     * ran short, not a way to size a wager after seeing how the table bet.
+     *
+     * @return why not, or null when added
+     */
+    public Component rebuy(ServerPlayer player, long amount) {
+        UUID playerId = player.getUUID();
+        Optional<BuyIn> buyIn = buyIn();
+        if (buyIn.isEmpty() || !stacks.holds(playerId)) {
+            return Component.translatable("tablegames.seat.must_be_seated");
+        }
+        if (phase().isCountingDown()) {
+            return Component.translatable("tablegames.buyin.between_rounds");
+        }
+        Component refused = refusalFor(buyIn.get(), amount, stacks.stackOf(playerId),
+                available(player));
+        if (refused != null) {
+            return refused;
+        }
+        stacks.add(playerId, amount);
+        publishCommitments();
+        markDirty();
+        return null;
+    }
+
+    /** What a buy-in rule says about this much, with the figures filled in. */
+    private static Component refusalFor(BuyIn buyIn, long amount, long stack, long available) {
+        return buyIn.problemWith(amount, stack, available)
+                .map(problem -> BuyInMessages.describe(buyIn, problem, stack, available))
+                .orElse(null);
+    }
+
+    /**
+     * What this player could still reserve here: their balance, less what
+     * other tables hold and less the stack they already have at this one.
+     */
+    public long available(ServerPlayer player) {
+        UUID playerId = player.getUUID();
+        long balance = CreditStorage.get(player.server).balanceOf(playerId);
+        long elsewhere = OutcomeSettler.stakes().committedElsewhere(playerId, commitmentKey());
+        return Math.max(0L, balance - elsewhere - stacks.stackOf(playerId));
+    }
+
+    /** The buy-in this table asks for, or empty when players bet from their balance. */
+    public Optional<BuyIn> buyIn() {
+        return game().flatMap(assigned -> assigned.buyIn(settings));
+    }
+
+    /** What this player has at the table, zero without a stack. */
+    public long stackOf(UUID playerId) {
+        return stacks.stackOf(playerId);
     }
 
     /**
@@ -346,11 +436,13 @@ public class TableBlockEntity extends BlockEntity {
      * Wagers already down come back with them: nothing has moved yet, so
      * dropping them from the map is the whole refund. This is refused during
      * the lockout, which is what stops it being a way out of a losing round.
+     * Their stack goes too, which is what frees it for spending elsewhere.
      */
     public SeatChange stand(UUID playerId) {
         SeatChange change = occupancy.stand(playerId, phase());
         if (change.changed()) {
             layout.clear(playerId);
+            stacks.remove(playerId);
             publishCommitments();
             callIfUnanimous();
             markDirty();
@@ -611,14 +703,23 @@ public class TableBlockEntity extends BlockEntity {
             return Component.translatable("tablegames.reject.no_such_pocket");
         }
 
-        // What the balance says, minus what this player has promised to other
-        // tables. Their chips on this one are not subtracted: the figure this
-        // table publishes replaces its own, so counting it here would stop
-        // somebody raising a wager they had already placed.
-        long balance = CreditStorage.get(server).balanceOf(playerId);
-        long elsewhere = OutcomeSettler.stakes().committedElsewhere(playerId, commitmentKey());
-        if (wageredBy(playerId) + bet.amount() > balance - elsewhere) {
-            return Component.translatable("tablegames.reject.insufficient_credits");
+        if (buyIn().isPresent()) {
+            // The stack is the whole of what this table may take. The balance
+            // behind it was already checked when it was reserved.
+            if (wageredBy(playerId) + bet.amount() > stacks.stackOf(playerId)) {
+                return Component.translatable("tablegames.reject.insufficient_stack",
+                        CreditFormat.of(Math.max(0, stacks.stackOf(playerId) - wageredBy(playerId))));
+            }
+        } else {
+            // What the balance says, minus what this player has promised to
+            // other tables. Their chips on this one are not subtracted: the
+            // figure this table publishes replaces its own, so counting it
+            // here would stop somebody raising a wager they had already placed.
+            long balance = CreditStorage.get(server).balanceOf(playerId);
+            long elsewhere = OutcomeSettler.stakes().committedElsewhere(playerId, commitmentKey());
+            if (wageredBy(playerId) + bet.amount() > balance - elsewhere) {
+                return Component.translatable("tablegames.reject.insufficient_credits");
+            }
         }
 
         // The last limit, and the only one that knows about the other tables.
@@ -656,30 +757,35 @@ public class TableBlockEntity extends BlockEntity {
 
     /**
      * Republishes everything this table is holding: the house's worst case,
-     * and what each player has riding on it.
+     * and what each player has reserved or riding on it.
      * <p>
-     * Recomputed from the layout rather than adjusted in steps and called
-     * from every path that changes a wager. A commitment that outlives its
-     * round is worse than one published twice — it narrows the other tables'
-     * limits and freezes a player's credits with nothing left to release it —
-     * and recomputing from the chips that are actually on the felt cannot
-     * drift the way an increment can.
+     * Recomputed from the layout and the stacks rather than adjusted in steps,
+     * and called from every path that changes either. A commitment that
+     * outlives its round or its seat is worse than one published twice — it
+     * narrows the other tables' limits and freezes a player's credits with
+     * nothing left to release it — and recomputing from what is actually at
+     * the table cannot drift the way an increment can.
+     * <p>
+     * A player's commitment is their stack when they have one, since that is
+     * what they set aside, and otherwise the chips they have down.
      */
     private void publishCommitments() {
-        Optional<Game> assigned = game();
-        if (assigned.isEmpty() || !(assigned.get() instanceof RouletteGame roulette)
-                || layout.isEmpty()) {
-            releaseCommitments();
-            return;
+        Optional<RouletteGame> roulette = roulette();
+        if (roulette.isPresent() && !layout.isEmpty()) {
+            OutcomeSettler.commitExposure(commitmentKey(),
+                    roulette.get().wheel().worstCaseHouseCost(layout.allBets()));
+        } else {
+            OutcomeSettler.releaseExposure(commitmentKey());
         }
-        OutcomeSettler.commitExposure(commitmentKey(),
-                roulette.wheel().worstCaseHouseCost(layout.allBets()));
 
-        // Cleared first, so that a player who took every chip back is
-        // released rather than left at whatever they had before.
+        // Cleared first, so that a player who took every chip back, or stood
+        // up, is released rather than left at whatever they had before.
         OutcomeSettler.releaseStakes(commitmentKey());
-        for (UUID playerId : layout.players()) {
-            OutcomeSettler.commitStake(commitmentKey(), playerId, layout.wageredBy(playerId));
+        Set<UUID> holders = new LinkedHashSet<>(stacks.players());
+        holders.addAll(layout.players());
+        for (UUID playerId : holders) {
+            long held = Math.max(stacks.stackOf(playerId), layout.wageredBy(playerId));
+            OutcomeSettler.commitStake(commitmentKey(), playerId, held);
         }
     }
 
@@ -732,6 +838,7 @@ public class TableBlockEntity extends BlockEntity {
             // up. The eviction is held until a phase that allows it, so this
             // can never fire mid-lockout on a live stake.
             layout.clear(playerId);
+            stacks.remove(playerId);
             publishCommitments();
             markDirty();
         }
@@ -791,10 +898,15 @@ public class TableBlockEntity extends BlockEntity {
             return;
         }
 
+        // Each seat plays with what the player brought, or with their balance
+        // at a game that asks for no buy-in.
         CreditStorage storage = CreditStorage.get(server);
+        boolean stacked = buyIn().isPresent();
         List<Seat> seats = new ArrayList<>();
         for (int i = 0; i < players.size(); i++) {
-            seats.add(Seat.forPlayer(i, players.get(i), storage.balanceOf(players.get(i))));
+            UUID playerId = players.get(i);
+            seats.add(Seat.forPlayer(i, playerId,
+                    stacked ? stacks.stackOf(playerId) : storage.balanceOf(playerId)));
         }
 
         // RandomSource is Minecraft's own interface and does not implement
@@ -846,6 +958,12 @@ public class TableBlockEntity extends BlockEntity {
             return;
         }
 
+        // The balances moved; the stacks follow by the same amounts, so each
+        // still says how much of its player's balance this table may take.
+        for (Payout payout : outcome.payouts()) {
+            stacks.settle(payout.playerId(), payout.delta());
+        }
+
         lastResult = result;
         window.showResult();
         endRound(players);
@@ -856,8 +974,9 @@ public class TableBlockEntity extends BlockEntity {
         // The round is over either way, so the house is no longer exposed to
         // it, and the other tables get their share of the bankroll back. The
         // players get their credits back too: whatever was riding on this
-        // round has either been paid or been lost by now.
-        releaseCommitments();
+        // round has either been paid or been lost by now. What stays reserved
+        // is each stack, which outlives the round.
+        publishCommitments();
         applyPendingSettings();
         occupancy.clearReady();
         occupancy.noteRoundEnded(participants);
@@ -868,11 +987,11 @@ public class TableBlockEntity extends BlockEntity {
      * Ends any round in progress without settling.
      * <p>
      * Nothing to refund: wagers only become real credits at settlement, so
-     * dropping them is the refund.
+     * dropping them is the refund. Stacks stay, with the seats they belong to.
      */
     public void abandon() {
-        releaseCommitments();
         layout.clearAll();
+        publishCommitments();
         applyPendingSettings();
         window.reset();
         occupancy.clearReady();

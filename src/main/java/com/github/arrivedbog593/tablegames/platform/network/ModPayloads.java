@@ -16,7 +16,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = TableGames.MOD_ID)
 public final class ModPayloads {
 
-    private static final String VERSION = "9";
+    private static final String VERSION = "10";
 
     private ModPayloads() {
     }

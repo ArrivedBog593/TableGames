@@ -1,8 +1,11 @@
 package com.github.arrivedbog593.tablegames.engine.games.roulette;
 
+import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 import org.junit.jupiter.api.Test;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -28,6 +31,44 @@ class RouletteSettingsTest {
         assertEquals(500, limits.insideMaximum());
         assertEquals(BetLimits.DEFAULT_MINIMUM, limits.outsideMinimum(),
                 "settings nobody touched must keep the game's own figure");
+    }
+
+    @Test
+    void everyRouletteTableAsksForABuyIn() {
+        RouletteGame game = RouletteGame.european();
+        BuyIn buyIn = game.buyIn(TableSettings.empty()).orElseThrow();
+        assertEquals(100, buyIn.minimum());
+        assertFalse(buyIn.isCapped(), "no ceiling until somebody sets one");
+
+        BuyIn configured = game.buyIn(TableSettings.empty()
+                .with(game.buyInMinimum(), 500)
+                .with(game.buyInMaximum(), 5_000)).orElseThrow();
+        assertEquals(new BuyIn(500, 5_000), configured);
+    }
+
+    @Test
+    void aBuyInCeilingBelowItsFloorIsRefused() {
+        RouletteGame game = RouletteGame.european();
+        TableSettings inverted = TableSettings.empty()
+                .with(game.buyInMinimum(), 1_000)
+                .with(game.buyInMaximum(), 500);
+        assertEquals(Optional.of("tablegames.setting.problem.buy_in_inverted"),
+                game.settingsProblem(inverted));
+    }
+
+    @Test
+    void aBuyInThatCannotCoverOneBetIsRefused() {
+        RouletteGame game = RouletteGame.european();
+        TableSettings useless = TableSettings.empty()
+                .with(game.insideMinimum(), 200)
+                .with(game.outsideMinimum(), 200)
+                .with(game.buyInMinimum(), 150);
+        assertEquals(Optional.of("tablegames.setting.problem.buy_in_below_bet"),
+                game.settingsProblem(useless));
+
+        // Covering the cheaper of the two minimums is enough to play.
+        TableSettings enough = useless.with(game.outsideMinimum(), 100);
+        assertEquals(Optional.empty(), game.settingsProblem(enough));
     }
 
     @Test

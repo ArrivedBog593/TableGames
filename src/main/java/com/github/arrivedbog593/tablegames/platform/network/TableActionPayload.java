@@ -26,13 +26,16 @@ import org.jetbrains.annotations.NotNull;
  *
  * @param kind     what they are asking for
  * @param tablePos which table; verified against reach before use
+ * @param amount   credits to buy in or top up with; zero for everything else
  */
-public record TableActionPayload(int kind, BlockPos tablePos) implements CustomPacketPayload {
+public record TableActionPayload(int kind, BlockPos tablePos, long amount)
+        implements CustomPacketPayload {
 
     public static final int KIND_SIT = 0;
     public static final int KIND_STAND = 1;
     public static final int KIND_READY = 2;
     public static final int KIND_NOT_READY = 3;
+    public static final int KIND_REBUY = 4;
 
     /**
      * How far a player may be from a table and still act on it. Generous
@@ -47,6 +50,7 @@ public record TableActionPayload(int kind, BlockPos tablePos) implements CustomP
             StreamCodec.composite(
                     ByteBufCodecs.VAR_INT, TableActionPayload::kind,
                     BlockPos.STREAM_CODEC, TableActionPayload::tablePos,
+                    ByteBufCodecs.VAR_LONG, TableActionPayload::amount,
                     TableActionPayload::new);
 
     @Override
@@ -74,14 +78,22 @@ public record TableActionPayload(int kind, BlockPos tablePos) implements CustomP
             }
 
             switch (payload.kind()) {
-                case KIND_SIT -> report(player, table.sit(player.getUUID()));
+                case KIND_SIT -> refuse(player, table.sit(player, payload.amount()));
                 case KIND_STAND -> report(player, table.stand(player.getUUID()));
+                case KIND_REBUY -> refuse(player, table.rebuy(player, payload.amount()));
                 case KIND_READY -> table.setReady(player.getUUID(), true);
                 case KIND_NOT_READY -> table.setReady(player.getUUID(), false);
                 default -> {
                 }
             }
         });
+    }
+
+    /** Tells the player why a request was turned down, if it was. */
+    private static void refuse(ServerPlayer player, Component refusal) {
+        if (refusal != null) {
+            player.sendSystemMessage(refusal);
+        }
     }
 
     /**

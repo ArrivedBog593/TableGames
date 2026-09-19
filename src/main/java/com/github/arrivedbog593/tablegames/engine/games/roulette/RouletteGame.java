@@ -4,6 +4,7 @@ import com.github.arrivedbog593.tablegames.engine.economy.CreditAccount;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.session.GameSession;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
+import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 
@@ -41,6 +42,13 @@ public record RouletteGame(String id, RouletteWheel wheel, BetLimits limits)
         implements Game {
 
     private static final int MAX_SEATS = 8;
+
+    /**
+     * The least a player sits down with when nobody set a figure. Ten
+     * minimum bets' worth at the default limits: enough to play a few
+     * rounds, not so much that a small table turns people away.
+     */
+    private static final long DEFAULT_BUY_IN_MINIMUM = 100;
 
     public RouletteGame {
         Objects.requireNonNull(id, "id");
@@ -111,14 +119,36 @@ public record RouletteGame(String id, RouletteWheel wheel, BetLimits limits)
         return maximumSpec("outside_max", limits.outsideMaximum());
     }
 
+    /** The least a player may sit down with. */
+    public SettingSpec.Amount buyInMinimum() {
+        return minimumSpec("buy_in_min", DEFAULT_BUY_IN_MINIMUM);
+    }
+
+    /** The most a stack may hold, where zero lets a player bring whatever they have. */
+    public SettingSpec.Amount buyInMaximum() {
+        return new SettingSpec.Amount(
+                id + ".buy_in_max", BuyIn.UNLIMITED, BuyIn.UNLIMITED, CreditAccount.MAX_BALANCE);
+    }
+
     /**
-     * The four numbers a roulette table posts, in the order a screen should
-     * ask for them: each minimum immediately before the maximum it pairs with.
+     * The numbers a roulette table posts, in the order a screen should ask
+     * for them: each minimum immediately before the maximum it pairs with,
+     * the wager limits first and the buy-in after.
      */
     @Override
     public List<SettingSpec> settings() {
         return List.of(insideMinimum(), insideMaximum(),
-                outsideMinimum(), outsideMaximum());
+                outsideMinimum(), outsideMaximum(),
+                buyInMinimum(), buyInMaximum());
+    }
+
+    /**
+     * Every seated player brings a stack. That is what gives "all in" a
+     * meaning short of the player's whole balance.
+     */
+    @Override
+    public Optional<BuyIn> buyIn(TableSettings settings) {
+        return Optional.of(new BuyIn(settings.get(buyInMinimum()), settings.get(buyInMaximum())));
     }
 
     /**
@@ -135,6 +165,15 @@ public record RouletteGame(String id, RouletteWheel wheel, BetLimits limits)
         }
         if (belowItsFloor(settings, outsideMinimum(), outsideMaximum())) {
             return Optional.of("tablegames.setting.problem.outside_inverted");
+        }
+        if (belowItsFloor(settings, buyInMinimum(), buyInMaximum())) {
+            return Optional.of("tablegames.setting.problem.buy_in_inverted");
+        }
+        // A stack that cannot cover a single bet anywhere on the layout would
+        // seat people who can do nothing but watch.
+        long cheapestBet = Math.min(settings.get(insideMinimum()), settings.get(outsideMinimum()));
+        if (settings.get(buyInMinimum()) < cheapestBet) {
+            return Optional.of("tablegames.setting.problem.buy_in_below_bet");
         }
         return Optional.empty();
     }

@@ -2,6 +2,7 @@ package com.github.arrivedbog593.tablegames.engine.game;
 
 import com.github.arrivedbog593.tablegames.engine.session.GameSession;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
+import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 
@@ -84,6 +85,19 @@ public interface Game {
      * own game would refuse to start on.
      */
     default Optional<String> settingsProblem(TableSettings settings) {
+        return Optional.empty();
+    }
+
+    /**
+     * What a player must bring to sit at a table set up this way, or empty
+     * when players bet straight from their balance.
+     * <p>
+     * Empty by default. A game that asks for one gives every seated player a
+     * stack, and that stack — not their whole balance — is what the table
+     * may take from them. Callers must have cleared {@link #settingsProblem}
+     * first.
+     */
+    default Optional<BuyIn> buyIn(TableSettings settings) {
         return Optional.empty();
     }
 

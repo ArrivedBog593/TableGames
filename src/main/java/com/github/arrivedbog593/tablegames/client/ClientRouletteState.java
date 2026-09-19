@@ -24,8 +24,9 @@ public final class ClientRouletteState {
      * <p>
      * Captured here rather than remembered by the screen, because a screen
      * is thrown away and rebuilt every time the player reopens the table,
-     * while this survives for as long as the game does — closing and
+     * while this survives for as long as the seat does — closing and
      * reopening the table should not cost you the bet "repeat" would rebuild.
+     * Standing up does.
      */
     private static List<RouletteStatePayload.Wager> lastSettledBets = List.of();
 
@@ -53,6 +54,13 @@ public final class ClientRouletteState {
         // to come from the state just before this one, not from this packet.
         if (payload.phase() == RoundPhase.RESULT && !state.myBets().isEmpty()) {
             lastSettledBets = state.myBets();
+        }
+        // Losing the seat ends the session those bets belonged to. Somebody
+        // who stood up and sat back down — maybe with a different stack — is
+        // starting over, and should see "clear bets", not an offer to rebuild
+        // what they did last time.
+        if (state.isSeated() && !payload.isSeated()) {
+            lastSettledBets = List.of();
         }
         state = payload;
     }

@@ -16,6 +16,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.NotNull;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,8 +73,10 @@ public class RouletteScreen extends TableScreen {
     private static final int ZERO_W = 16;
     private static final int COLUMN_W = 18;
 
-    private static final int CHIP_W = 26;
-    private static final int CUSTOM_W = 44;
+    private static final int CHIP_W = 22;
+    /** "All in" sits between the chips and the typed amount it fills. */
+    private static final int ALL_IN_W = 30;
+    private static final int CUSTOM_W = 46;
     private static final int CHIP_H = 16;
     private static final int CHIP_ROW_Y = 112;
 
@@ -82,6 +85,8 @@ public class RouletteScreen extends TableScreen {
     /** "Repeat" and "Double" share the width "Clear bets" usually takes. */
     private static final int HALF_BUTTON_W = (BUTTON_W - BUTTON_GAP) / 2;
     private static final int BUTTON_ROW_Y = 136;
+    /** The top-up button, in the empty corner above the seat list. */
+    private static final int REBUY_Y = 5;
 
     private static final int RED = 0xFFB3212B;
     private static final int BLACK = 0xFF1C1C1C;
@@ -93,13 +98,6 @@ public class RouletteScreen extends TableScreen {
     private static final int[] RED_NUMBERS = {
             1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36
     };
-
-    /**
-     * What a felt click stakes before the player has built up anything of
-     * their own. A sensible middle chip rather than the smallest one, so a
-     * fresh screen is ready to bet without anybody having to think about it.
-     */
-    private static final long DEFAULT_STAKE = CHIPS[2];
 
     private final List<Spot> spots = new ArrayList<>();
 
@@ -143,21 +141,91 @@ public class RouletteScreen extends TableScreen {
         super.init();
         buildSpots();
 
-        customAmount = new EditBox(font, left + 8 + CHIPS.length * (CHIP_W + 2),
+        customAmount = new EditBox(font, allInX() + ALL_IN_W + 2,
                 top + CHIP_ROW_Y, CUSTOM_W, CHIP_H,
                 Component.translatable("tablegames.roulette.custom_amount"));
         customAmount.setMaxLength(12);
-        customAmount.setHint(Component.translatable("tablegames.roulette.custom_amount"));
+        // A short hint of its own: the full label overflowed a box this narrow.
+        customAmount.setHint(Component.translatable("tablegames.roulette.custom_hint"));
         // Digits only. Rejecting the keystroke is clearer than accepting the text
         // and refusing the bet afterward.
         customAmount.setFilter(text -> text.chars().allMatch(Character::isDigit));
         addRenderableWidget(customAmount);
+
+        // A resize rebuilds every widget and moves the panel, so a prompt
+        // that was open is laid out again where the panel now is.
+        if (prompt != null) {
+            openPrompt(prompt.isRebuy());
+        }
     }
 
-    /** What a click on the felt would stake: the stack in hand, or the default. */
-    private long stakeToPlace() {
-        long pending = pendingAmount();
-        return pending > 0 ? pending : DEFAULT_STAKE;
+    /**
+     * The buy-in prompt, while it is open. Everything under it is covered:
+     * clicks, scrolls and keys go to it or nowhere.
+     */
+    private BuyInPrompt prompt;
+
+    private void openPrompt(boolean rebuy) {
+        closePrompt();
+        prompt = new BuyInPrompt(font, rebuy, left + FELT_W / 2, top + PANEL_H / 2,
+                () -> ClientRouletteState.state().funds(),
+                amount -> {
+                    sendSeatAction(rebuy ? TableActionPayload.KIND_REBUY
+                            : TableActionPayload.KIND_SIT, amount);
+                    closePrompt();
+                },
+                this::closePrompt);
+        addWidget(prompt.box());
+        setFocused(prompt.box());
+    }
+
+    private void closePrompt() {
+        if (prompt != null) {
+            removeWidget(prompt.box());
+            prompt = null;
+            setFocused(null);
+        }
+    }
+
+    /**
+     * Drops the prompt once it no longer applies: the seat was taken, or
+     * lost, while it was open.
+     */
+    @Override
+    public void tick() {
+        super.tick();
+        if (prompt != null) {
+            RouletteStatePayload state = ClientRouletteState.state();
+            boolean rebuying = prompt.isRebuy();
+            if (rebuying != state.isSeated()) {
+                closePrompt();
+            }
+        }
+    }
+
+    /** Enter confirms and Escape backs out of the prompt, not the table. */
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (prompt != null) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                prompt.cancel();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                prompt.confirm();
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private int allInX() {
+        return left + 8 + CHIPS.length * (CHIP_W + 2);
+    }
+
+    /** What the viewer can still put down this round: placeable less what is already down. */
+    private static long remaining(RouletteStatePayload state) {
+        return Math.max(0L, state.placeable() - ClientRouletteState.wagered());
     }
 
     /** What the box currently reads, as a number. Zero for empty or unusable text. */
@@ -260,11 +328,36 @@ public class RouletteScreen extends TableScreen {
         // Widgets are drawn by super.render, which runs before the panel is
         // painted over them. Repainting here is what puts the field on top of
         // its own background rather than under it.
-        if (customAmount != null) {
+        // Not while the prompt is up: its text drew through the dimming and
+        // read as part of the prompt.
+        if (customAmount != null && prompt == null) {
             customAmount.render(graphics, mouseX, mouseY, partialTick);
         }
-        renderHover(graphics, mouseX, mouseY);
+        if (prompt == null) {
+            renderHover(graphics, mouseX, mouseY);
+            renderControlHover(graphics, mouseX, mouseY, state);
+        }
         renderWheel(graphics, state);
+        if (prompt != null) {
+            // Dimmed rather than hidden, so the player still sees the table
+            // they are about to sit at.
+            graphics.fill(left, top, left + PANEL_W, top + PANEL_H, 0x90000000);
+            prompt.render(graphics, mouseX, mouseY, partialTick);
+        }
+    }
+
+    /** What "all in" and the top-up button would do, since neither says it in full. */
+    private void renderControlHover(GuiGraphics graphics, int mouseX, int mouseY,
+                                    RouletteStatePayload state) {
+        if (state.isSeated() && isOver(mouseX, mouseY, allInX(), top + CHIP_ROW_Y,
+                ALL_IN_W, CHIP_H)) {
+            graphics.renderTooltip(font, Component.translatable("tablegames.roulette.all_in_hint",
+                    format(remaining(state))), mouseX, mouseY);
+        } else if (offeringRebuy(state) && !canRebuyNow(state)
+                && isOver(mouseX, mouseY, rebuyX(), rebuyY(), SEAT_LIST_W, CHIP_H)) {
+            graphics.renderTooltip(font, Component.translatable(
+                    "tablegames.buyin.between_rounds"), mouseX, mouseY);
+        }
     }
 
     /**
@@ -383,12 +476,17 @@ public class RouletteScreen extends TableScreen {
     private void renderHeader(GuiGraphics graphics, RouletteStatePayload state) {
         graphics.drawString(font, title, left + 8, top + 7, LABEL_TEXT, false);
 
-        // The second half appears only when another table is holding some of
-        // it. A player who cannot see why their chips are greyed out here
-        // would have no way of finding the table that is holding them.
-        Component balance = state.elsewhere() > 0
+        // Seated with a stack, what matters is the chips in front of you, not
+        // the balance behind them: that is all this table can take.
+        //
+        // Otherwise the second half appears only when another table is
+        // holding some of it. A player who cannot see why their chips are
+        // greyed out here would have no way of finding the table holding them.
+        Component balance = state.isSeated() && state.funds().hasBuyIn()
+                ? Component.translatable("tablegames.roulette.stack", format(remaining(state)))
+                : state.elsewhere() > 0
                 ? Component.translatable("tablegames.roulette.balance_elsewhere",
-                format(state.placeable()), format(state.balance()))
+                format(state.funds().available()), format(state.balance()))
                 : Component.translatable("tablegames.roulette.balance",
                 format(state.balance()));
         graphics.drawString(font, balance,
@@ -466,9 +564,10 @@ public class RouletteScreen extends TableScreen {
             // a chip that still fits on top of what is already built up stays
             // usable, and one that would not is refused before the click that
             // would waste it.
-            // Placeable, not balance: credits riding on another table are
-            // spoken for, and this one will refuse a chip built out of them.
-            boolean usable = state.placeable() >= pending + CHIPS[i];
+            // What is left, not the balance: credits riding on another table
+            // are spoken for, a stack caps what this one may take, and chips
+            // already down are no longer in hand.
+            boolean usable = remaining(state) >= pending + CHIPS[i];
 
             drawButton(graphics, x, chipY, CHIP_W, CHIP_H, 0xFF9A9A9A,
                     isOver(mouseX, mouseY, x, chipY, CHIP_W, CHIP_H));
@@ -477,6 +576,16 @@ public class RouletteScreen extends TableScreen {
             graphics.drawString(font, label, x + (CHIP_W - font.width(label)) / 2, chipY + 4,
                     usable ? 0xFFFFFFFF : 0xFF7A5050, false);
         }
+
+        // Everything the player has left, into the hand in one click. Placing
+        // it is still a click on the felt, so "all in" is never an accident.
+        boolean allInUsable = state.isSeated() && state.bettingOpen() && remaining(state) > 0;
+        drawButton(graphics, allInX(), chipY, ALL_IN_W, CHIP_H,
+                allInUsable ? 0xFF8A4B1E : 0xFF4A4A4A,
+                allInUsable && isOver(mouseX, mouseY, allInX(), chipY, ALL_IN_W, CHIP_H));
+        Component allIn = Component.translatable("tablegames.roulette.all_in");
+        graphics.drawString(font, allIn, allInX() + (ALL_IN_W - font.width(allIn)) / 2,
+                chipY + 4, allInUsable ? 0xFFFFFFFF : 0xFF9A9A9A, false);
 
         int buttonY = top + BUTTON_ROW_Y;
         // The same slot "Clear bets" usually sits in, because the two never
@@ -519,6 +628,35 @@ public class RouletteScreen extends TableScreen {
                     leaveX + (SEAT_LIST_W - font.width(leave)) / 2, buttonY + 4,
                     0xFFFFFFFF, false);
         }
+
+        // Topping up sits in the corner above the seats, across from the
+        // chip count it adds to, and well away from "Leave seat".
+        if (offeringRebuy(state)) {
+            boolean now = canRebuyNow(state);
+            drawButton(graphics, rebuyX(), rebuyY(), SEAT_LIST_W, CHIP_H,
+                    now ? 0xFF2E7D32 : 0xFF4A4A4A,
+                    now && isOver(mouseX, mouseY, rebuyX(), rebuyY(), SEAT_LIST_W, CHIP_H));
+            Component rebuy = Component.translatable("tablegames.table.rebuy");
+            graphics.drawString(font, rebuy, rebuyX() + (SEAT_LIST_W - font.width(rebuy)) / 2,
+                    rebuyY() + 4, now ? 0xFFFFFFFF : 0xFF9A9A9A, false);
+        }
+    }
+
+    private static boolean offeringRebuy(RouletteStatePayload state) {
+        return state.isSeated() && state.funds().hasBuyIn();
+    }
+
+    /** Between rounds only: never while the wheel is counting down. */
+    private static boolean canRebuyNow(RouletteStatePayload state) {
+        return !state.phase().isCountingDown();
+    }
+
+    private int rebuyX() {
+        return left + SEAT_LIST_X;
+    }
+
+    private int rebuyY() {
+        return top + REBUY_Y;
     }
 
     private Component rightButtonLabel(RouletteStatePayload state) {
@@ -645,6 +783,13 @@ public class RouletteScreen extends TableScreen {
                 lines.add(Component.translatable("tablegames.roulette.your_stake",
                         format(staked)).withStyle(ChatFormatting.GOLD));
             }
+            // Clicking with an empty hand does nothing, so say why before
+            // the click rather than leave it looking broken.
+            RouletteStatePayload state = ClientRouletteState.state();
+            if (state.isSeated() && state.bettingOpen() && pendingAmount() <= 0) {
+                lines.add(Component.translatable("tablegames.roulette.build_stake_first")
+                        .withStyle(ChatFormatting.YELLOW));
+            }
             graphics.renderComponentTooltip(font, lines, mouseX, mouseY);
             return;
         }
@@ -655,7 +800,30 @@ public class RouletteScreen extends TableScreen {
         int mx = (int) mouseX;
         int my = (int) mouseY;
 
+        if (prompt != null) {
+            if (prompt.mouseClicked(mx, my)) {
+                click();
+                return true;
+            }
+            // The box still takes clicks, to place the cursor; nothing
+            // behind the prompt does.
+            if (prompt.contains(mx, my)) {
+                return super.mouseClicked(mouseX, mouseY, button);
+            }
+            return true;
+        }
+
         int chipY = top + CHIP_ROW_Y;
+        RouletteStatePayload forAllIn = ClientRouletteState.state();
+        if (forAllIn.isSeated() && forAllIn.bettingOpen()
+                && isOver(mx, my, allInX(), chipY, ALL_IN_W, CHIP_H)) {
+            long everything = remaining(forAllIn);
+            if (everything > 0) {
+                customAmount.setValue(String.valueOf(everything));
+                click();
+            }
+            return true;
+        }
         for (int i = 0; i < CHIPS.length; i++) {
             int x = left + 8 + i * (CHIP_W + 2);
             if (isOver(mx, my, x, chipY, CHIP_W, CHIP_H)) {
@@ -689,6 +857,13 @@ public class RouletteScreen extends TableScreen {
             return true;
         }
         RouletteStatePayload seated = ClientRouletteState.state();
+        if (offeringRebuy(seated) && isOver(mx, my, rebuyX(), rebuyY(), SEAT_LIST_W, CHIP_H)) {
+            if (canRebuyNow(seated)) {
+                click();
+                openPrompt(true);
+            }
+            return true;
+        }
         if (seated.isSeated() && !seated.locked()
                 && isOver(mx, my, left + SEAT_LIST_X, buttonY, SEAT_LIST_W, CHIP_H)) {
             sendSeatAction(TableActionPayload.KIND_STAND);
@@ -696,7 +871,12 @@ public class RouletteScreen extends TableScreen {
         }
         if (isOver(mx, my, buttonX(1), buttonY, BUTTON_W, CHIP_H)) {
             RouletteStatePayload state = ClientRouletteState.state();
-            if (!state.isSeated()) {
+            if (!state.isSeated() && state.funds().hasBuyIn()) {
+                if (state.table().hasFreeSeat()) {
+                    click();
+                    openPrompt(false);
+                }
+            } else if (!state.isSeated()) {
                 sendSeatAction(TableActionPayload.KIND_SIT);
             } else if (!state.locked()) {
                 sendSeatAction(amIReady(state)
@@ -710,9 +890,19 @@ public class RouletteScreen extends TableScreen {
         if (current.bettingOpen() && current.isSeated()) {
             for (Spot spot : spots) {
                 if (spot.contains(mx, my)) {
+                    // An empty hand places nothing. Staking some default
+                    // instead meant a second click after a bet quietly put
+                    // down a figure the player never built.
+                    long stake = pendingAmount();
+                    if (stake <= 0) {
+                        return true;
+                    }
                     send(RouletteActionPayload.place(tablePos, spot.type(),
                             spot.type().requiresTarget() ? pocketOf(spot) : null,
-                            stakeToPlace()));
+                            stake));
+                    // The chips in hand went down with that click, so the hand
+                    // is empty again, ready to build the next bet from scratch.
+                    customAmount.setValue("");
                     return true;
                 }
             }
@@ -727,6 +917,9 @@ public class RouletteScreen extends TableScreen {
      */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
+        if (prompt != null) {
+            return true;
+        }
         int mx = (int) mouseX;
         int my = (int) mouseY;
         int chipY = top + CHIP_ROW_Y;
@@ -831,7 +1024,11 @@ public class RouletteScreen extends TableScreen {
     }
 
     private void sendSeatAction(int kind) {
-        PacketDistributor.sendToServer(new TableActionPayload(kind, tablePos));
+        sendSeatAction(kind, 0);
+    }
+
+    private void sendSeatAction(int kind, long amount) {
+        PacketDistributor.sendToServer(new TableActionPayload(kind, tablePos, amount));
         click();
     }
 

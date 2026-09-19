@@ -4,6 +4,7 @@ import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetType;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.Pocket;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteBet;
+import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
@@ -23,6 +24,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -169,7 +171,7 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
      * {@link RouletteView}, because {@code StreamCodec.composite} stops at
      * six components and the view was already using all six. Grouping is
      * cheaper than a handwritten codec and says something true besides:
-     * these two numbers are only meaningful together.
+     * these numbers are only meaningful together.
      *
      * @param balance   the viewer's credits, never anybody else's
      * @param elsewhere what of that balance is riding on other tables, so the
@@ -179,18 +181,44 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
      *                  Their stake on <em>this</em> table is not in here: the
      *                  screen already shows that separately, and this table's
      *                  rules leave room for the wagers it is holding
+     * @param stack        what the viewer bought in with here, as it stands
+     * @param buyInMinimum the least a player sits down with, or zero when this
+     *                     table takes wagers straight from the balance
+     * @param buyInMaximum the most a stack may hold, zero for no ceiling
      */
-    public record Funds(long balance, long elsewhere) {
+    public record Funds(long balance, long elsewhere, long stack,
+                        long buyInMinimum, long buyInMaximum) {
 
         public static final StreamCodec<ByteBuf, Funds> STREAM_CODEC =
                 StreamCodec.composite(
                         ByteBufCodecs.VAR_LONG, Funds::balance,
                         ByteBufCodecs.VAR_LONG, Funds::elsewhere,
+                        ByteBufCodecs.VAR_LONG, Funds::stack,
+                        ByteBufCodecs.VAR_LONG, Funds::buyInMinimum,
+                        ByteBufCodecs.VAR_LONG, Funds::buyInMaximum,
                         Funds::new);
 
-        /** What the viewer may still put on this table's felt. */
+        public boolean hasBuyIn() {
+            return buyInMinimum > 0;
+        }
+
+        /** The buy-in rule, for a table that has one. */
+        public Optional<BuyIn> buyIn() {
+            return hasBuyIn() ? Optional.of(new BuyIn(buyInMinimum, buyInMaximum))
+                    : Optional.empty();
+        }
+
+        /**
+         * The most the viewer may have on this felt in total: their stack, or
+         * at a table without one, whatever other tables are not holding.
+         */
         public long placeable() {
-            return Math.max(0L, balance - elsewhere);
+            return hasBuyIn() ? stack : Math.max(0L, balance - elsewhere);
+        }
+
+        /** What the viewer could still reserve here, for a buy-in or a top-up. */
+        public long available() {
+            return Math.max(0L, balance - elsewhere - stack);
         }
     }
 
@@ -247,7 +275,8 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
     public static RouletteStatePayload idle() {
         return new RouletteStatePayload(
                 new TableView(RoundPhase.IDLE.ordinal(), 0, List.of(), 0, NO_SEAT, 0),
-                new RouletteView(new Funds(0, 0), 0, 0, NO_RESULT, List.of(), List.of()));
+                new RouletteView(new Funds(0, 0, 0, 0, 0), 0, 0, NO_RESULT,
+                        List.of(), List.of()));
     }
 
     // --- Convenience for the screen ---------------------------------------------------
@@ -267,6 +296,10 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
      */
     public long placeable() {
         return roulette.placeable();
+    }
+
+    public Funds funds() {
+        return roulette.funds();
     }
 
     public int secondsLeft() {
@@ -352,11 +385,15 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
             packed = landed.doubleZero() ? DOUBLE_ZERO : landed.number();
         }
 
+        Optional<BuyIn> buyIn = table.buyIn();
         RouletteView mine = new RouletteView(
                 new Funds(
                         CreditStorage.get(server).balanceOf(playerId),
                         OutcomeSettler.stakes()
-                                .committedElsewhere(playerId, table.commitmentKey())),
+                                .committedElsewhere(playerId, table.commitmentKey()),
+                        table.stackOf(playerId),
+                        buyIn.map(BuyIn::minimum).orElse(0L),
+                        buyIn.map(BuyIn::maximum).orElse(0L)),
                 table.effectiveMinimum(BetType.STRAIGHT_UP),
                 table.currentTableMaximum(server),
                 packed,
