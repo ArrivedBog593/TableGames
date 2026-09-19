@@ -8,6 +8,7 @@ import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
 import com.github.arrivedbog593.tablegames.engine.table.TableAccess;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
+import com.github.arrivedbog593.tablegames.platform.block.RouletteTable;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
@@ -161,7 +162,7 @@ public final class TableCommands {
     }
 
     /** One line of the limit report, saying which ceiling is doing the work. */
-    private static void reportLimit(CommandSourceStack source, TableBlockEntity table,
+    private static void reportLimit(CommandSourceStack source, RouletteTable table,
                                     MinecraftServer server, BetType type, String key) {
         long effective = table.effectiveMaximum(server, type);
         boolean tableImposed = table.limits().maximumFor(type) <= effective
@@ -315,16 +316,15 @@ public final class TableCommands {
 
         // The straight-up maximum, because it is the one that binds first and
         // the one people ask about. Everything else on the felt allows more.
-        if (assigned.isHouseBanked()) {
-            // Both, and labeled, because a single figure cannot say whether
-            // it is the house's ceiling or the table's own choice — and
-            // "maximum 5,000" is baffling next to a bankroll that could cover
-            // far more.
-            reportLimit(source, table, server, BetType.STRAIGHT_UP,
+        // Both, and labeled, because a single figure cannot say whether it is
+        // the house's ceiling or the table's own choice — and "maximum 5,000"
+        // is baffling next to a bankroll that could cover far more.
+        table.roulette().ifPresent(wheel -> {
+            reportLimit(source, wheel, server, BetType.STRAIGHT_UP,
                     "tablegames.command.table.info_inside");
-            reportLimit(source, table, server, BetType.RED,
+            reportLimit(source, wheel, server, BetType.RED,
                     "tablegames.command.table.info_outside");
-        }
+        });
         return 1;
     }
 

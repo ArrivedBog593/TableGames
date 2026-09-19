@@ -1,19 +1,8 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
 import com.github.arrivedbog593.tablegames.engine.game.Game;
-import com.github.arrivedbog593.tablegames.engine.games.roulette.BetLimits;
-import com.github.arrivedbog593.tablegames.engine.games.roulette.BetType;
-import com.github.arrivedbog593.tablegames.engine.games.roulette.Pocket;
-import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteAction;
-import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteBet;
-import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteGame;
-import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteLayout;
-import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteSession;
-import com.github.arrivedbog593.tablegames.engine.session.ActionResult;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
 import com.github.arrivedbog593.tablegames.engine.session.Payout;
-import com.github.arrivedbog593.tablegames.engine.session.Seat;
-import com.github.arrivedbog593.tablegames.engine.table.BettingWindow;
 import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.engine.table.SeatChange;
@@ -22,12 +11,10 @@ import com.github.arrivedbog593.tablegames.engine.table.TableOccupancy;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 import com.github.arrivedbog593.tablegames.engine.table.TableStacks;
 import com.github.arrivedbog593.tablegames.platform.economy.BuyInMessages;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
 import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
-import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlockEntities;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
@@ -39,6 +26,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.MinecraftServer;
@@ -58,14 +46,18 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
-import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
-import java.util.random.RandomGenerator;
 
 /**
- * The state of one table: which game it hosts, who is at it, and the round in
- * progress.
+ * One table: which game it hosts, how it is set up, who owns it, and who is
+ * at it.
+ * <p>
+ * The game itself — its round, its wagers, what it shows — lives in a
+ * {@link TableRuntime} built for whatever the table hosts. This class keeps
+ * what every game shares and would otherwise copy: the seats, the stacks
+ * players bought in with, and the commitments all of that publishes to the
+ * shared registries.
  * <p>
  * Opening a table makes you a spectator. Sitting down is a separate act, and
  * the seats are counted, which is what stops a ninth player from reaching a
@@ -109,12 +101,12 @@ public class TableBlockEntity extends BlockEntity {
     private TableSettings settings = TableSettings.empty();
 
     /**
-     * A configuration accepted while chips were on the felt, waiting for the
+     * A configuration accepted while something was at stake, waiting for the
      * round to end. Null when there is none.
      * <p>
-     * The spin replays every wager under the limits in force at that moment,
+     * A round settles under the rules in force when its wagers were taken,
      * so tightening them under a live bet would have the engine refuse a
-     * stake this table already took.
+     * stake this table already accepted.
      */
     private TableSettings pendingSettings;
 
@@ -139,22 +131,7 @@ public class TableBlockEntity extends BlockEntity {
      */
     private final TableAccess access = new TableAccess();
 
-    private final BettingWindow window = new BettingWindow();
-
     private TableOccupancy occupancy = new TableOccupancy(UNASSIGNED_SEATS);
-
-    /**
-     * Wagers taken this round.
-     * <p>
-     * Roulette-shaped, because there is nothing generic left to say about a
-     * bet once its legality has been checked: what a wager even means is
-     * different for every game. The bookkeeping this needs — who has what
-     * down, how much rides on a position — is {@link RouletteLayout}'s job,
-     * pulled out so it can be tested without a running server. When a second
-     * game arrives, this field is what becomes game-specific, not everything
-     * around it.
-     */
-    private final RouletteLayout layout = new RouletteLayout();
 
     /**
      * What each seated player bought in with, for games that ask for it.
@@ -165,7 +142,8 @@ public class TableBlockEntity extends BlockEntity {
      */
     private final TableStacks stacks = new TableStacks();
 
-    private Pocket lastResult;
+    /** The game being played here, rebuilt empty whenever the game is set or loaded. */
+    private TableRuntime runtime = TableRuntime.IdleRuntime.INSTANCE;
 
     /**
      * Whether clients need a fresh snapshot.
@@ -198,6 +176,16 @@ public class TableBlockEntity extends BlockEntity {
 
     public String gameId() {
         return gameId;
+    }
+
+    /** The live game, whatever it is. */
+    public TableRuntime runtime() {
+        return runtime;
+    }
+
+    /** The live game when it is a roulette wheel. */
+    public Optional<RouletteTable> roulette() {
+        return runtime instanceof RouletteTable wheel ? Optional.of(wheel) : Optional.empty();
     }
 
     /** Whether a game is assigned and its settings were confirmed, so it may be played. */
@@ -277,11 +265,12 @@ public class TableBlockEntity extends BlockEntity {
         abandon();
         occupancy.clear();
         stacks.clear();
-        publishCommitments();
         this.gameId = game == null ? "" : game.id();
         this.configured = false;
+        this.runtime = TableRuntime.forGame(game, this);
         this.occupancy = new TableOccupancy(
                 game == null ? UNASSIGNED_SEATS : Math.max(1, game.maxPlayers()));
+        publishCommitments();
         setChanged();
         updateVariant(game == null ? TableVariant.BLANK : Games.variantOf(game));
         markDirty();
@@ -340,7 +329,7 @@ public class TableBlockEntity extends BlockEntity {
         occupancy.markAbsent(playerId);
         // Absent players are counted ready, which can be the last vote the
         // table was waiting on.
-        callIfUnanimous();
+        runtime.votesChanged();
         markDirty();
     }
 
@@ -377,8 +366,8 @@ public class TableBlockEntity extends BlockEntity {
     /**
      * Adds to a seated player's stack, between rounds only.
      * <p>
-     * Not while the wheel is counting down: topping up is for somebody who
-     * ran short, not a way to size a wager after seeing how the table bet.
+     * Not while a round is counting down: topping up is for somebody who ran
+     * short, not a way to size a wager after seeing how the table bet.
      *
      * @return why not, or null when added
      */
@@ -434,18 +423,15 @@ public class TableBlockEntity extends BlockEntity {
      * Gives up a seat and goes back to watching.
      * <p>
      * Wagers already down come back with them: nothing has moved yet, so
-     * dropping them from the map is the whole refund. This is refused during
-     * the lockout, which is what stops it being a way out of a losing round.
-     * Their stack goes too, which is what frees it for spending elsewhere.
+     * dropping them is the whole refund. This is refused during the lockout,
+     * which is what stops it being a way out of a losing round. Their stack
+     * goes too, which is what frees it for spending elsewhere.
      */
     public SeatChange stand(UUID playerId) {
         SeatChange change = occupancy.stand(playerId, phase());
         if (change.changed()) {
-            layout.clear(playerId);
-            stacks.remove(playerId);
-            publishCommitments();
-            callIfUnanimous();
-            markDirty();
+            loseSeat(playerId);
+            runtime.votesChanged();
         }
         return change;
     }
@@ -458,21 +444,9 @@ public class TableBlockEntity extends BlockEntity {
         if (!occupancy.setReady(playerId, ready)) {
             return false;
         }
-        callIfUnanimous();
+        runtime.votesChanged();
         markDirty();
         return true;
-    }
-
-    /**
-     * Cuts the window short when every seated player has said they are done.
-     * <p>
-     * Only ever shortens. The clock keeps running underneath, so one player
-     * who never presses anything delays nobody past the thirty seconds.
-     */
-    private void callIfUnanimous() {
-        if (occupancy.allSeatedReady() && window.isRunning()) {
-            window.callNow();
-        }
     }
 
     public List<UUID> seatedPlayers() {
@@ -504,81 +478,19 @@ public class TableBlockEntity extends BlockEntity {
         return occupancy.seatIndexOf(playerId);
     }
 
-    // --- The round --------------------------------------------------------------
+    // --- The round, whatever the game -------------------------------------------
 
     public RoundPhase phase() {
-        return window.phase();
-    }
-
-    /** Whether a wager may be placed or withdrawn right now. */
-    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-    public boolean isBettingOpen() {
-        return window.phase().acceptsBets();
+        return runtime.phase();
     }
 
     public int secondsRemaining() {
-        return window.secondsRemaining();
+        return runtime.secondsRemaining();
     }
 
-    public Optional<Pocket> lastResult() {
-        return window.phase() == RoundPhase.RESULT
-                ? Optional.ofNullable(lastResult)
-                : Optional.empty();
-    }
-
-    /** What this player has on the layout right now. */
-    public List<RouletteBet> betsOf(UUID playerId) {
-        return layout.betsOf(playerId);
-    }
-
+    /** What this player has riding on the round in progress. */
     public long wageredBy(UUID playerId) {
-        return layout.wageredBy(playerId);
-    }
-
-    /**
-     * The largest wager this table will take right now.
-     * <p>
-     * Quoted against the straight-up payout, the worst case the table offers,
-     * so the figure shown to players is the one that actually binds.
-     */
-    public long currentTableMaximum(MinecraftServer server) {
-        return effectiveMaximum(server, BetType.STRAIGHT_UP);
-    }
-
-    /**
-     * The largest wager this table will actually take on a bet of this type.
-     * <p>
-     * The stricter of the two ceilings. The bankroll's is a protection and
-     * moves with the balance; the table's is a choice and does not. A table
-     * may only ever narrow what the house allows, never widen it — a table
-     * promising payouts the bankroll cannot cover would just be a refused
-     * settlement waiting to happen.
-     */
-    public long effectiveMaximum(MinecraftServer server, BetType type) {
-        Optional<Game> assigned = game();
-        if (assigned.isEmpty()) {
-            return 0;
-        }
-        long derived = OutcomeSettler.tableMaximum(server, assigned.get(),
-                type.payoutRatio());
-        return Math.min(derived, limits().maximumFor(type));
-    }
-
-    /** The smallest wager this table will take on a bet of this type. */
-    public long effectiveMinimum(BetType type) {
-        return limits().minimumFor(type);
-    }
-
-    /**
-     * The wager limits this table posts, derived from its settings.
-     * <p>
-     * Derived rather than stored, because limits are roulette's idea of what
-     * a table can be told and not every game's. A table hosting something
-     * else answers with the default, which restricts nothing and lets the
-     * bankroll alone decide.
-     */
-    public BetLimits limits() {
-        return roulette().map(game -> game.limitsFrom(settings)).orElse(BetLimits.DEFAULT);
+        return runtime.wageredBy(playerId);
     }
 
     /**
@@ -589,6 +501,11 @@ public class TableBlockEntity extends BlockEntity {
         return pendingSettings != null ? pendingSettings : settings;
     }
 
+    /** The settings the round in progress is played under. */
+    TableSettings activeSettings() {
+        return settings;
+    }
+
     /** Whether the last accepted configuration is waiting for the round to end. */
     public boolean hasPendingSettings() {
         return pendingSettings != null;
@@ -597,7 +514,7 @@ public class TableBlockEntity extends BlockEntity {
     /**
      * Takes a whole configuration at once, or refuses it whole.
      * <p>
-     * With chips on the felt it is held until the round ends instead of
+     * With something at stake it is held until the round ends instead of
      * applied; see {@link #pendingSettings}. Either way it counts as the
      * table having been set up, which is what lets it be played.
      *
@@ -609,11 +526,11 @@ public class TableBlockEntity extends BlockEntity {
         if (problem.isPresent()) {
             return problem;
         }
-        if (layout.isEmpty()) {
+        if (runtime.hasLiveStakes()) {
+            this.pendingSettings = proposed;
+        } else {
             this.settings = proposed;
             this.pendingSettings = null;
-        } else {
-            this.pendingSettings = proposed;
         }
         this.configured = game().isPresent();
         setChanged();
@@ -629,348 +546,30 @@ public class TableBlockEntity extends BlockEntity {
         }
     }
 
-    /** The assigned game when it is a roulette, which is what posts limits. */
-    private Optional<RouletteGame> roulette() {
-        return game().filter(RouletteGame.class::isInstance).map(RouletteGame.class::cast);
+    // --- What the runtime calls back into -------------------------------------
+
+    /** Whether every seated player has said they are done. */
+    boolean allSeatedReady() {
+        return occupancy.allSeatedReady();
     }
 
-    /**
-     * Takes a wager.
-     * <p>
-     * Only from a seated player, and only against the maximum the engine
-     * itself will accept — the platform used to validate against a limit
-     * derived from the bankroll while the session validated against its own
-     * fixed one, so a wager between the two was taken here and silently
-     * dropped at spin time.
-     *
-     * @return a message explaining a refusal or null when accepted. A whole
-     *         component rather than a key, because a refusal that does not
-     *         name the limit is useless once a player can type an arbitrary
-     *         amount — "too much" is guessable from six fixed chips and is
-     *         not from a free-text field.
-     */
-    public Component placeBet(ServerPlayer player, RouletteBet bet) {
-        Optional<Game> assigned = game();
-        if (assigned.isEmpty() || !(assigned.get() instanceof RouletteGame roulette)) {
-            return Component.translatable("tablegames.table.unassigned");
-        }
-        UUID playerId = player.getUUID();
-        if (!occupancy.isSeated(playerId)) {
-            return Component.translatable("tablegames.seat.must_be_seated");
-        }
-        if (!isBettingOpen()) {
-            return Component.translatable("tablegames.roulette.betting_closed");
-        }
-        MinecraftServer server = player.server;
-
-        if (!OutcomeSettler.canOpen(server, roulette)) {
-            return Component.translatable("tablegames.roulette.house_closed");
-        }
-        if (layout.betsOf(playerId).size()
-                >= RouletteStatePayload.MAX_BETS_ON_WIRE) {
-            return Component.translatable("tablegames.reject.too_many_bets");
-        }
-        BetLimits limits = limits();
-        if (bet.amount() < limits.minimumFor(bet.type())) {
-            return Component.translatable("tablegames.reject.below_minimum_bet",
-                    CreditFormat.of(limits.minimumFor(bet.type())));
-        }
-        // Two limits, measuring two different things, both on the position
-        // rather than on the chip. Checking one wager at a time made them
-        // meaningless: five chips of a thousand on the same number are five
-        // legal bets that together commit what one illegal bet would have.
-        //
-        // The table's own limit is per player, because that is what a posted
-        // maximum means to somebody standing at a wheel: the most *you* may
-        // put on a number, not the almost everybody together may.
-        long mine = layout.stakedOn(playerId, bet);
-        if (mine + bet.amount() > limits.maximumFor(bet.type())) {
-            return Component.translatable("tablegames.reject.above_maximum_bet",
-                    CreditFormat.of(limits.maximumFor(bet.type())),
-                    CreditFormat.of(Math.max(0, limits.maximumFor(bet.type()) - mine)));
-        }
-        // The bankroll's limit is table-wide because that is what the house
-        // actually has to cover. A straight-up pocket paying 35:1 costs the
-        // house the same whether one player or eight put the credits there.
-        long derived = OutcomeSettler.tableMaximum(server, roulette, bet.type().payoutRatio());
-        long onTable = layout.stakedOn(null, bet);
-        if (onTable + bet.amount() > derived) {
-            return Component.translatable("tablegames.reject.position_full",
-                    CreditFormat.of(Math.max(0, derived - onTable)));
-        }
-        if (bet.type().requiresTarget()
-                && !roulette.wheel().pockets().contains(bet.target())) {
-            return Component.translatable("tablegames.reject.no_such_pocket");
-        }
-
-        if (buyIn().isPresent()) {
-            // The stack is the whole of what this table may take. The balance
-            // behind it was already checked when it was reserved.
-            if (wageredBy(playerId) + bet.amount() > stacks.stackOf(playerId)) {
-                return Component.translatable("tablegames.reject.insufficient_stack",
-                        CreditFormat.of(Math.max(0, stacks.stackOf(playerId) - wageredBy(playerId))));
-            }
-        } else {
-            // What the balance says, minus what this player has promised to
-            // other tables. Their chips on this one are not subtracted: the
-            // figure this table publishes replaces its own, so counting it
-            // here would stop somebody raising a wager they had already placed.
-            long balance = CreditStorage.get(server).balanceOf(playerId);
-            long elsewhere = OutcomeSettler.stakes().committedElsewhere(playerId, commitmentKey());
-            if (wageredBy(playerId) + bet.amount() > balance - elsewhere) {
-                return Component.translatable("tablegames.reject.insufficient_credits");
-            }
-        }
-
-        // The last limit, and the only one that knows about the other tables.
-        // Both checks above are about this table alone; the bankroll is
-        // shared, so what every table together stands to lose has to fit
-        // inside it as well.
-        List<RouletteBet> proposed = new ArrayList<>(layout.allBets());
-        proposed.add(bet);
-        long worstCase = roulette.wheel().worstCaseHouseCost(proposed);
-        if (!OutcomeSettler.withinExposure(server, roulette, commitmentKey(), worstCase)) {
-            return Component.translatable("tablegames.reject.house_exposed");
-        }
-
-        layout.place(playerId, bet);
-        publishCommitments();
-        // Backing a new chip means you are no longer finished, the same way
-        // the engine's own session treats it.
+    /** Takes back a player's ready vote, for when they changed their wager. */
+    void withdrawVote(UUID playerId) {
         occupancy.setReady(playerId, false);
-        window.start();
-        markDirty();
-        return null;
     }
 
     /**
-     * How this table is named in the shared registries.
-     * <p>
-     * Public because the state packet needs it too: telling a player what
-     * they may still wager here means asking what they have committed
-     * everywhere else, and "everywhere else" is defined relative to this key.
+     * Moves every stack by what a settled round paid or took, so each still
+     * says how much of its player's balance this table may take.
      */
-    public String commitmentKey() {
-        String dimension = level == null ? "?" : level.dimension().location().toString();
-        return dimension + "@" + worldPosition.toShortString();
-    }
-
-    /**
-     * Republishes everything this table is holding: the house's worst case,
-     * and what each player has reserved or riding on it.
-     * <p>
-     * Recomputed from the layout and the stacks rather than adjusted in steps,
-     * and called from every path that changes either. A commitment that
-     * outlives its round or its seat is worse than one published twice — it
-     * narrows the other tables' limits and freezes a player's credits with
-     * nothing left to release it — and recomputing from what is actually at
-     * the table cannot drift the way an increment can.
-     * <p>
-     * A player's commitment is their stack when they have one, since that is
-     * what they set aside, and otherwise the chips they have down.
-     */
-    private void publishCommitments() {
-        Optional<RouletteGame> roulette = roulette();
-        if (roulette.isPresent() && !layout.isEmpty()) {
-            OutcomeSettler.commitExposure(commitmentKey(),
-                    roulette.get().wheel().worstCaseHouseCost(layout.allBets()));
-        } else {
-            OutcomeSettler.releaseExposure(commitmentKey());
-        }
-
-        // Cleared first, so that a player who took every chip back, or stood
-        // up, is released rather than left at whatever they had before.
-        OutcomeSettler.releaseStakes(commitmentKey());
-        Set<UUID> holders = new LinkedHashSet<>(stacks.players());
-        holders.addAll(layout.players());
-        for (UUID playerId : holders) {
-            long held = Math.max(stacks.stackOf(playerId), layout.wageredBy(playerId));
-            OutcomeSettler.commitStake(commitmentKey(), playerId, held);
-        }
-    }
-
-    /** Let's go of the bankroll and of everybody's credits at once. */
-    private void releaseCommitments() {
-        OutcomeSettler.releaseExposure(commitmentKey());
-        OutcomeSettler.releaseStakes(commitmentKey());
-    }
-
-    /** Takes every chip this player has on the layout back off it. */
-    public boolean clearBets(UUID playerId) {
-        if (!isBettingOpen()) {
-            return false;
-        }
-        if (!layout.clear(playerId)) {
-            return false;
-        }
-        publishCommitments();
-        markDirty();
-        return true;
-    }
-
-    // --- Ticking ------------------------------------------------------------------
-
-    public static void serverTick(Level level, BlockPos pos, BlockState state,
-                                  TableBlockEntity table) {
-        table.ensureVariant();
-        table.evictTheAbsent();
-
-        switch (table.window.tick()) {
-            case SPIN -> table.spin();
-            case RESULT_CLEARED -> {
-                table.lastResult = null;
-                table.markDirty();
-            }
-            case LOCKED, SECOND_ELAPSED -> table.markDirty();
-            case NONE -> {
-            }
-        }
-
-        if (table.stateDirty) {
-            table.stateDirty = false;
-            table.broadcastState();
-        }
-    }
-
-    private void evictTheAbsent() {
-        for (UUID playerId : occupancy.tickAbsences(phase())) {
-            // Their chips come back with them, exactly as if they had stood
-            // up. The eviction is held until a phase that allows it, so this
-            // can never fire mid-lockout on a live stake.
-            layout.clear(playerId);
-            stacks.remove(playerId);
-            publishCommitments();
-            markDirty();
-        }
-    }
-
-    /**
-     * Runs the wheel, guarding the tick against anything the rules throw.
-     * <p>
-     * The engine is written to reject rather than throw, but "written to" is
-     * not "proven to", and this runs inside a block entity tick. An unhandled
-     * exception here does not fail one table, it kills the ticking of every
-     * block entity behind it in the chunk. A bug in a card game must never be
-     * able to take the server with it.
-     * <p>
-     * Wagers become credits only at settlement, so abandoning the round is a
-     * complete refund. Nobody loses anything to a failure here except the
-     * round.
-     */
-    private void spin() {
-        try {
-            runSpin();
-        } catch (RuntimeException failure) {
-            LOGGER.error("[TableGames] A round of {} at {} failed and was abandoned. "
-                            + "No credits were moved.",
-                    gameId.isEmpty() ? "an unassigned table" : gameId,
-                    worldPosition.toShortString(), failure);
-            abandon();
-            tellViewers(Component.translatable("tablegames.table.round_failed"));
-            markDirty();
-        }
-    }
-
-    /**
-     * Closes betting, runs the wheel, and settles.
-     * <p>
-     * The engine session is built here rather than held open, with a seat for
-     * each player who wagered and their real balance as its stack. Replaying
-     * the bets into it gives the tested rules exactly the state they expect.
-     * The seat list can never exceed the game's maximum because only seated
-     * players are allowed to wager in the first place.
-     */
-    private void runSpin() {
-        if (level == null || level.getServer() == null) {
-            return;
-        }
-        List<UUID> players = layout.players();
-        if (players.isEmpty()) {
-            endRound(players);
-            return;
-        }
-
-        MinecraftServer server = level.getServer();
-        Optional<Game> assigned = game();
-        if (assigned.isEmpty() || !(assigned.get() instanceof RouletteGame roulette)) {
-            layout.clearAll();
-            endRound(players);
-            return;
-        }
-
-        // Each seat plays with what the player brought, or with their balance
-        // at a game that asks for no buy-in.
-        CreditStorage storage = CreditStorage.get(server);
-        boolean stacked = buyIn().isPresent();
-        List<Seat> seats = new ArrayList<>();
-        for (int i = 0; i < players.size(); i++) {
-            UUID playerId = players.get(i);
-            seats.add(Seat.forPlayer(i, playerId,
-                    stacked ? stacks.stackOf(playerId) : storage.balanceOf(playerId)));
-        }
-
-        // RandomSource is Minecraft's own interface and does not implement
-        // RandomGenerator, which the engine takes. Seeding a plain Random from
-        // the level keeps the wheel tied to the world's randomness without
-        // dragging a Minecraft type into the engine's signature.
-        RandomGenerator random = new Random(level.random.nextLong());
-        // Built with this table's limits, not the game's defaults. The rules
-        // that replay these wagers have to be the rules that took them, or a
-        // stake accepted at the block is refused here and quietly ceases to
-        // exist between being taken and being paid.
-        RouletteSession session =
-                (RouletteSession) roulette.createSession(seats, random, limits());
-        session.begin();
-        for (UUID playerId : players) {
-            for (RouletteBet bet : layout.betsOf(playerId)) {
-                ActionResult result = session.submit(playerId, new RouletteAction.Place(bet));
-                if (!result.accepted()) {
-                    // The two layers disagree about what is legal. Loud,
-                    // because the alternative is a wager that quietly stops
-                    // existing between being taken and being paid.
-                    LOGGER.error("[TableGames] The engine refused a wager this table had "
-                                    + "already accepted, at {}: {}. Player {}, {} on {}.",
-                            worldPosition.toShortString(), result.messageKey(),
-                            playerId, bet.amount(), bet.type());
-                }
-            }
-        }
-        session.spin();
-
-        Pocket result = session.result().orElse(null);
-        Outcome outcome = session.outcome().orElse(null);
-        layout.clearAll();
-
-        if (outcome == null) {
-            endRound(players);
-            return;
-        }
-
-        OutcomeSettler.Result settled = OutcomeSettler.settle(
-                server, roulette, outcome, "at " + worldPosition.toShortString());
-
-        if (!settled.applied()) {
-            // Nothing moved, so nobody lost anything. Say so rather than let
-            // the round end in silence.
-            tellViewers(Component.translatable(settled.reasonKey()));
-            tellViewers(Component.translatable("tablegames.settle.refunded"));
-            endRound(players);
-            return;
-        }
-
-        // The balances moved; the stacks follow by the same amounts, so each
-        // still says how much of its player's balance this table may take.
+    void settleStacks(Outcome outcome) {
         for (Payout payout : outcome.payouts()) {
             stacks.settle(payout.playerId(), payout.delta());
         }
-
-        lastResult = result;
-        window.showResult();
-        endRound(players);
     }
 
     /** Closes the books on a round: votes cleared, participation recorded. */
-    private void endRound(List<UUID> participants) {
+    void endRound(List<UUID> participants) {
         // The round is over either way, so the house is no longer exposed to
         // it, and the other tables get their share of the bankroll back. The
         // players get their credits back too: whatever was riding on this
@@ -990,13 +589,95 @@ public class TableBlockEntity extends BlockEntity {
      * dropping them is the refund. Stacks stay, with the seats they belong to.
      */
     public void abandon() {
-        layout.clearAll();
+        runtime.abandon();
         publishCommitments();
         applyPendingSettings();
-        window.reset();
         occupancy.clearReady();
-        lastResult = null;
         markDirty();
+    }
+
+    // --- Commitments ------------------------------------------------------------
+
+    /**
+     * How this table is named in the shared registries.
+     * <p>
+     * Public because the state packet needs it too: telling a player what
+     * they may still wager here means asking what they have committed
+     * everywhere else, and "everywhere else" is defined relative to this key.
+     */
+    public String commitmentKey() {
+        String dimension = level == null ? "?" : level.dimension().location().toString();
+        return dimension + "@" + worldPosition.toShortString();
+    }
+
+    /**
+     * Republishes everything this table is holding: the house's worst case,
+     * and what each player has reserved or riding on it.
+     * <p>
+     * Recomputed from the round and the stacks rather than adjusted in steps,
+     * and called from every path that changes either. A commitment that
+     * outlives its round or its seat is worse than one published twice — it
+     * narrows the other tables' limits and freezes a player's credits with
+     * nothing left to release it — and recomputing from what is actually at
+     * the table cannot drift the way an increment can.
+     * <p>
+     * A player's commitment is their stack when they have one, since that is
+     * what they set aside, and otherwise the chips they have down.
+     */
+    void publishCommitments() {
+        long worstCase = runtime.worstCaseHouseCost();
+        if (worstCase > 0) {
+            OutcomeSettler.commitExposure(commitmentKey(), worstCase);
+        } else {
+            OutcomeSettler.releaseExposure(commitmentKey());
+        }
+
+        // Cleared first, so that a player who took every chip back, or stood
+        // up, is released rather than left at whatever they had before.
+        OutcomeSettler.releaseStakes(commitmentKey());
+        Set<UUID> holders = new LinkedHashSet<>(stacks.players());
+        holders.addAll(occupancy.seats());
+        for (UUID playerId : holders) {
+            long held = Math.max(stacks.stackOf(playerId), runtime.wageredBy(playerId));
+            OutcomeSettler.commitStake(commitmentKey(), playerId, held);
+        }
+    }
+
+    /** Lets go of the bankroll and of everybody's credits at once. */
+    private void releaseCommitments() {
+        OutcomeSettler.releaseExposure(commitmentKey());
+        OutcomeSettler.releaseStakes(commitmentKey());
+    }
+
+    /** Whatever a player had here goes with their seat: wagers and stack alike. */
+    private void loseSeat(UUID playerId) {
+        runtime.seatLost(playerId);
+        stacks.remove(playerId);
+        publishCommitments();
+        markDirty();
+    }
+
+    // --- Ticking ------------------------------------------------------------------
+
+    public static void serverTick(Level level, BlockPos pos, BlockState state,
+                                  TableBlockEntity table) {
+        table.ensureVariant();
+        table.evictTheAbsent();
+        table.runtime.tick();
+
+        if (table.stateDirty) {
+            table.stateDirty = false;
+            table.broadcastState();
+        }
+    }
+
+    private void evictTheAbsent() {
+        // Their chips come back with them, exactly as if they had stood up.
+        // The eviction is held until a phase that allows it, so this can
+        // never fire mid-lockout on a live stake.
+        for (UUID playerId : occupancy.tickAbsences(phase())) {
+            loseSeat(playerId);
+        }
     }
 
     // --- Talking to clients ---------------------------------------------------------
@@ -1004,6 +685,11 @@ public class TableBlockEntity extends BlockEntity {
     /** Marks the table as needing a snapshot on the next tick. */
     public void markDirty() {
         stateDirty = true;
+    }
+
+    /** What one viewer is allowed to see of the game here, or null for nothing. */
+    public CustomPacketPayload stateFor(MinecraftServer server, UUID viewer) {
+        return runtime.stateFor(server, viewer);
     }
 
     /** Pushes the round's state to everyone with the table open. */
@@ -1017,12 +703,14 @@ public class TableBlockEntity extends BlockEntity {
             if (player == null) {
                 continue;
             }
-            PacketDistributor.sendToPlayer(player,
-                    RouletteStatePayload.forPlayer(server, this, viewer));
+            CustomPacketPayload state = stateFor(server, viewer);
+            if (state != null) {
+                PacketDistributor.sendToPlayer(player, state);
+            }
         }
     }
 
-    private void tellViewers(Component message) {
+    void tellViewers(Component message) {
         if (level == null || level.getServer() == null) {
             return;
         }
@@ -1043,6 +731,7 @@ public class TableBlockEntity extends BlockEntity {
         readAccess(tag);
         this.settings = readSettings(tag);
         this.configured = tag.getBoolean(KEY_CONFIGURED);
+        this.runtime = TableRuntime.forGame(game().orElse(null), this);
         this.occupancy = new TableOccupancy(game()
                 .map(assigned -> Math.max(1, assigned.maxPlayers()))
                 .orElse(UNASSIGNED_SEATS));

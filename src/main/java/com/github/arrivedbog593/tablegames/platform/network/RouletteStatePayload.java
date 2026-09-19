@@ -6,6 +6,7 @@ import com.github.arrivedbog593.tablegames.engine.games.roulette.Pocket;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteBet;
 import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
+import com.github.arrivedbog593.tablegames.platform.block.RouletteTable;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
@@ -349,8 +350,8 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
     // --- Building it --------------------------------------------------------------------
 
     /** Snapshots a table for one player. Server side only. */
-    public static RouletteStatePayload forPlayer(MinecraftServer server,
-                                                 TableBlockEntity table, UUID playerId) {
+    public static RouletteStatePayload forPlayer(MinecraftServer server, TableBlockEntity table,
+                                                 RouletteTable wheel, UUID playerId) {
         List<SeatView> seatViews = new ArrayList<>();
         List<SeatBets> otherBets = new ArrayList<>();
 
@@ -364,7 +365,7 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
                     table.isReady(occupant)));
 
             if (!occupant.equals(playerId)) {
-                List<Wager> theirs = wagersOf(table, occupant);
+                List<Wager> theirs = wagersOf(wheel, occupant);
                 if (!theirs.isEmpty()) {
                     otherBets.add(new SeatBets(index, theirs));
                 }
@@ -379,7 +380,7 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
                 table.seatIndexOf(playerId).orElse(NO_SEAT),
                 table.maxSeats());
 
-        Pocket landed = table.lastResult().orElse(null);
+        Pocket landed = wheel.lastResult().orElse(null);
         int packed = NO_RESULT;
         if (landed != null) {
             packed = landed.doubleZero() ? DOUBLE_ZERO : landed.number();
@@ -394,18 +395,18 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
                         table.stackOf(playerId),
                         buyIn.map(BuyIn::minimum).orElse(0L),
                         buyIn.map(BuyIn::maximum).orElse(0L)),
-                table.effectiveMinimum(BetType.STRAIGHT_UP),
-                table.currentTableMaximum(server),
+                wheel.effectiveMinimum(BetType.STRAIGHT_UP),
+                wheel.currentTableMaximum(server),
                 packed,
-                wagersOf(table, playerId),
+                wagersOf(wheel, playerId),
                 List.copyOf(otherBets));
 
         return new RouletteStatePayload(view, mine);
     }
 
-    private static List<Wager> wagersOf(TableBlockEntity table, UUID playerId) {
+    private static List<Wager> wagersOf(RouletteTable wheel, UUID playerId) {
         List<Wager> wagers = new ArrayList<>();
-        for (RouletteBet bet : table.betsOf(playerId)) {
+        for (RouletteBet bet : wheel.betsOf(playerId)) {
             if (wagers.size() >= MAX_BETS_ON_WIRE) {
                 break;
             }

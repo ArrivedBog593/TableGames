@@ -6,12 +6,12 @@ import com.github.arrivedbog593.tablegames.platform.item.TableKeyItem;
 import com.github.arrivedbog593.tablegames.platform.network.OpenGamePickerPayload;
 import com.github.arrivedbog593.tablegames.platform.network.OpenTableConfigPayload;
 import com.github.arrivedbog593.tablegames.platform.network.OpenTableScreenPayload;
-import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlockEntities;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -223,8 +223,10 @@ public class TableBlock extends BaseEntityBlock {
         // still walks up to watch, which is the whole point of the split.
         table.arrive(serverPlayer.getUUID());
         // State first, so the screen has something to draw on its first frame.
-        PacketDistributor.sendToPlayer(serverPlayer,
-                RouletteStatePayload.forPlayer(level.getServer(), table, serverPlayer.getUUID()));
+        CustomPacketPayload snapshot = table.stateFor(level.getServer(), serverPlayer.getUUID());
+        if (snapshot != null) {
+            PacketDistributor.sendToPlayer(serverPlayer, snapshot);
+        }
         PacketDistributor.sendToPlayer(serverPlayer,
                 new OpenTableScreenPayload(assigned.get().id(), pos));
         return InteractionResult.CONSUME;

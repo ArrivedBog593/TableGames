@@ -5,6 +5,7 @@ import com.github.arrivedbog593.tablegames.engine.games.roulette.BetType;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.Pocket;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.PocketColor;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteBet;
+import com.github.arrivedbog593.tablegames.platform.block.RouletteTable;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -93,9 +94,19 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
                 return;
             }
 
+            // A roulette table, specifically. Anything else is a client
+            // talking to a table that is not hosting what it thinks.
+            if (table.roulette().isEmpty()) {
+                return;
+            }
+            RouletteTable wheel = table.roulette().get();
             switch (payload.kind()) {
-                case KIND_CLEAR -> clear(player, table);
-                case KIND_PLACE -> place(payload, player, table);
+                case KIND_CLEAR -> {
+                    if (table.isSeated(player.getUUID())) {
+                        clear(player, wheel);
+                    }
+                }
+                case KIND_PLACE -> place(payload, player, wheel);
                 default -> {
                 }
             }
@@ -109,10 +120,7 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
      * Withdrawing during the lockout is the same hole as standing up during
      * it: a way to pull a stake out of a round that is about to resolve.
      */
-    private static void clear(ServerPlayer player, TableBlockEntity table) {
-        if (!table.isSeated(player.getUUID())) {
-            return;
-        }
+    private static void clear(ServerPlayer player, RouletteTable table) {
         if (!table.clearBets(player.getUUID()) && !table.isBettingOpen()) {
             player.displayClientMessage(
                     Component.translatable("tablegames.roulette.betting_closed"), true);
@@ -120,7 +128,7 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
     }
 
     private static void place(RouletteActionPayload payload, ServerPlayer player,
-                              TableBlockEntity table) {
+                              RouletteTable table) {
         BetType[] types = BetType.values();
         if (payload.betType() < 0 || payload.betType() >= types.length
                 || payload.amount() <= 0) {
