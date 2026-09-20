@@ -41,7 +41,17 @@ import java.util.Map;
 public class SlotMachineScreen extends TableScreen {
 
     private static final int PANEL_W = 248;
-    private static final int PANEL_H = 204;
+
+    /**
+     * Tall enough for everything below the glass to stand clear of
+     * everything else.
+     * <p>
+     * Worked out from the rows rather than guessed: the window, the line
+     * buttons, the stake row, the lever, what it costs, the meter, and the
+     * two credit buttons, each with room to breathe. Guessing it is how the
+     * meter ended up printed through the stake row.
+     */
+    private static final int PANEL_H = 272;
 
     private static final int PAD = 10;
 
@@ -55,7 +65,9 @@ public class SlotMachineScreen extends TableScreen {
     private static final int BUTTON_H = 16;
     private static final int LINE_BUTTON_W = 20;
     private static final int SPIN_W = 76;
-    private static final int SEAT_BUTTON_W = 74;
+
+    /** Wide enough for "Agregar créditos", which is the longest label here. */
+    private static final int SEAT_BUTTON_W = 100;
 
     private static final int HINT = 0xFF707070;
     private static final int WIN_TEXT = 0xFF1E7A1E;
@@ -119,11 +131,21 @@ public class SlotMachineScreen extends TableScreen {
     }
 
     private int spinY() {
-        return stakeY() + BUTTON_H + 12;
+        return stakeY() + BUTTON_H + 14;
     }
 
     private int spinX() {
         return left + (PANEL_W - SPIN_W) / 2;
+    }
+
+    /** Under the lever: what the next pull costs. */
+    private int costY() {
+        return spinY() + BUTTON_H + 4;
+    }
+
+    /** The credit meter, above the buttons that change it. */
+    private int meterY() {
+        return seatButtonY() - 13;
     }
 
     private int seatButtonY() {
@@ -227,7 +249,14 @@ public class SlotMachineScreen extends TableScreen {
         }
     }
 
-    /** The three reels, either turning or showing what they landed on. */
+    /**
+     * The three reels: turning, showing what they landed on, or dark.
+     * <p>
+     * Dark is its own state and not a spin nobody made. A machine with
+     * nothing on the glass yet used to show a frozen row of symbols, which
+     * read as a result — the player's first sight of the cabinet was three
+     * symbols they had not paid for and could not explain.
+     */
     private void drawWindow(GuiGraphics graphics, SlotsStatePayload state) {
         int x0 = windowX();
         int y0 = windowY();
@@ -237,6 +266,11 @@ public class SlotMachineScreen extends TableScreen {
         boolean rolling = state.machine().rolling();
         SlotsStatePayload.SpinView spin = state.spin();
         SlotSymbol[] all = SlotSymbol.values();
+        boolean asleep = !rolling && !spin.hasResult();
+        // A rendered item ignores anything drawn flat over it afterwards, so
+        // while the prompt is up the symbols are not drawn at all rather than
+        // drawn and covered. They showed through the prompt otherwise.
+        boolean covered = prompt != null;
 
         for (int reel = 0; reel < SlotMachine.REELS; reel++) {
             for (int row = 0; row < Reel.ROWS; row++) {
@@ -247,12 +281,20 @@ public class SlotMachineScreen extends TableScreen {
                 if (lit) {
                     graphics.renderOutline(x, y, CELL, CELL, LINE_LIT);
                 }
+                if (covered) {
+                    continue;
+                }
 
-                SlotSymbol symbol = rolling || !spin.hasResult()
+                SlotSymbol symbol = rolling || asleep
                         ? scrolling(all, reel, row)
                         : spin.symbolAt(reel, row);
                 ItemStack icon = new ItemStack(FACES.getOrDefault(symbol, Items.COAL));
                 graphics.renderItem(icon, x + (CELL - 16) / 2, y + (CELL - 16) / 2);
+                if (asleep) {
+                    // Above the item's own depth, which is why this takes the
+                    // z the flat overloads do not.
+                    graphics.fill(x, y, x + CELL, y + CELL, 300, 0xC4121212);
+                }
             }
         }
     }
@@ -357,7 +399,7 @@ public class SlotMachineScreen extends TableScreen {
         } else {
             cost = Component.translatable("tablegames.slots.cost", format(spinCost()));
         }
-        graphics.drawString(font, cost, left + (PANEL_W - font.width(cost)) / 2, y + BUTTON_H + 4,
+        graphics.drawString(font, cost, left + (PANEL_W - font.width(cost)) / 2, costY(),
                 state.spin().owesAFreeSpin() ? FREE_TEXT : HINT, false);
     }
 
@@ -369,7 +411,7 @@ public class SlotMachineScreen extends TableScreen {
      * and talks in its own unit, the way one on a real floor does.
      */
     private void drawMeter(GuiGraphics graphics, SlotsStatePayload state) {
-        int y = seatButtonY() - 14;
+        int y = meterY();
         Component credits = Component.translatable("tablegames.slots.credits",
                 format(state.funds().stackHeld()));
         graphics.drawString(font, credits, left + PAD, y, LABEL_TEXT, false);

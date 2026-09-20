@@ -129,8 +129,12 @@ final class BuyInPrompt {
     void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         Panels.panel(graphics, left, top, left + W, top + H);
 
-        Component title = Component.translatable(rebuy
-                ? "tablegames.buyin.title_rebuy" : "tablegames.buyin.title_sit");
+        // A machine that counts in its own credits sells credits, not chips.
+        // Calling them chips at a slot cabinet is the sort of small wrongness
+        // that makes a player wonder what else the screen has misunderstood.
+        String noun = funds.get().priced() ? "_credits" : "";
+        Component title = Component.translatable((rebuy
+                ? "tablegames.buyin.title_rebuy" : "tablegames.buyin.title_sit") + noun);
         graphics.drawString(font, title, left + (W - font.width(title)) / 2, top + 7,
                 Panels.LABEL_TEXT, false);
 

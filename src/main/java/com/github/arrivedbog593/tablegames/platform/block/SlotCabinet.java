@@ -51,22 +51,27 @@ public final class SlotCabinet implements TableRuntime {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    /** How long the reels turn before the result is readable, in ticks. */
+    /** How long the reels turn before they are readable, in ticks. */
     private static final int SPIN_TICKS = 40;
-
-    /** How long a finished spin stays on screen before the machine idles. */
-    private static final int RESULT_TICKS = 60;
 
     private final GameBlockEntity block;
     private final SlotsGame game;
 
-    /** Ticks left of whatever the reels are doing; zero when the machine is idle. */
+    /** Ticks left of the reels turning; zero when they are still. */
     private int ticksLeft;
 
-    /** Whether those ticks are the reels turning or the result being read. */
+    /** Whether the reels are turning, which is the whole of what the lock is. */
     private boolean rolling;
 
-    /** The last spin, kept while it is on screen. */
+    /**
+     * The last spin, kept until the next one replaces it.
+     * <p>
+     * Not cleared on a timer. A machine that wiped the symbols a few seconds
+     * after they landed would be taking away the only record of what just
+     * happened, and the player who looked away for a moment has no way to get
+     * it back. Every machine on a real floor leaves the last result standing
+     * until the handle comes down again, and so does this one.
+     */
     private SlotMachine.SpinResult lastResult;
 
     /** What the last spin paid, so the screen can say so. */
@@ -275,7 +280,7 @@ public final class SlotCabinet implements TableRuntime {
         this.lastResult = landed;
         this.lastWin = Math.multiplyExact(pull.perLine(), (long) landed.totalMultiple());
         this.lastSpinner = playerId;
-        this.ticksLeft = SPIN_TICKS + RESULT_TICKS;
+        this.ticksLeft = SPIN_TICKS;
         this.rolling = true;
 
         block.endRound(List.of(playerId));
@@ -284,12 +289,17 @@ public final class SlotCabinet implements TableRuntime {
 
     // --- The round, such as it is ------------------------------------------------
 
+    /**
+     * Locked while the reels turn, idle the rest of the time.
+     * <p>
+     * There is no phase for showing a result, because showing one is not
+     * something the machine is doing — it is what the glass says until
+     * somebody pulls again. Standing up and cashing out stay open throughout,
+     * which is right: the spin was settled before the first reel moved.
+     */
     @Override
     public RoundPhase phase() {
-        if (ticksLeft <= 0) {
-            return RoundPhase.IDLE;
-        }
-        return rolling ? RoundPhase.LOCKED : RoundPhase.RESULT;
+        return rolling ? RoundPhase.LOCKED : RoundPhase.IDLE;
     }
 
     @Override
@@ -298,14 +308,10 @@ public final class SlotCabinet implements TableRuntime {
             return;
         }
         ticksLeft--;
-        if (rolling && ticksLeft <= RESULT_TICKS) {
-            rolling = false;
-            block.markDirty();
-        }
         if (ticksLeft == 0) {
-            lastResult = null;
-            lastSpinner = null;
-            lastWin = 0;
+            // The reels have stopped, so the symbols may be sent. They were
+            // withheld while it was turning.
+            rolling = false;
             block.markDirty();
         }
     }
@@ -332,10 +338,17 @@ public final class SlotCabinet implements TableRuntime {
         return 0;
     }
 
+    /**
+     * The machine forgets whoever walks away from it: the spin it owed them,
+     * and the one still on the glass.
+     */
     @Override
     public void seatLost(UUID playerId) {
         if (playerId.equals(lastSpinner)) {
             free = null;
+            lastResult = null;
+            lastSpinner = null;
+            lastWin = 0;
         }
     }
 
