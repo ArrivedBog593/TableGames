@@ -65,17 +65,29 @@ public record BuyIn(long minimum, long maximum) {
 
     /**
      * Whether this much may be added to a stack.
+     * <p>
+     * The minimum is a price of admission and nothing else: it says what it
+     * takes to sit down, not what it takes to keep playing. Somebody already
+     * in the seat may top up by any amount they like, including less than
+     * the minimum — they paid it when they arrived.
+     * <p>
+     * Whether this is an arrival is asked of the caller rather than guessed
+     * from an empty stack. A player who has lost everything is still sitting
+     * there, and being told to buy in again from scratch to put one more
+     * credit in is exactly the rule this used to get wrong.
      *
      * @param amount    what the player asked to bring
-     * @param stack     what they already have at this table, zero to sit down
+     * @param stack     what they already have at this table
      * @param available what they could still reserve: their balance less
      *                  everything already spoken for, this table included
+     * @param joining   whether this is the buy-in that seats them
      */
-    public Optional<Problem> problemWith(long amount, long stack, long available) {
+    public Optional<Problem> problemWith(long amount, long stack, long available,
+                                         boolean joining) {
         if (amount <= 0) {
             return Optional.of(Problem.NOT_POSITIVE);
         }
-        if (stack == 0 && amount < minimum) {
+        if (joining && amount < minimum) {
             return Optional.of(Problem.BELOW_MINIMUM);
         }
         if (amount > ceiling() - stack) {

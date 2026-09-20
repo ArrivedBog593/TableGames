@@ -327,7 +327,7 @@ public abstract class GameBlockEntity extends BlockEntity {
         }
         Optional<BuyIn> buyIn = buyIn();
         if (buyIn.isPresent() && !occupancy.isSeated(playerId)) {
-            Component refused = refusalFor(buyIn.get(), amount, 0, available(player));
+            Component refused = refusalFor(buyIn.get(), amount, 0, available(player), true);
             if (refused != null) {
                 return refused;
             }
@@ -361,8 +361,11 @@ public abstract class GameBlockEntity extends BlockEntity {
         if (phase().isCountingDown()) {
             return Component.translatable("tablegames.buyin.between_rounds");
         }
+        // Not joining: they are already in the seat, so the price of
+        // admission has been paid and no longer applies — including to a
+        // player who has just lost the lot and wants one more go.
         Component refused = refusalFor(buyIn.get(), amount, stacks.stackOf(playerId),
-                available(player));
+                available(player), false);
         if (refused != null) {
             return refused;
         }
@@ -373,8 +376,9 @@ public abstract class GameBlockEntity extends BlockEntity {
     }
 
     /** What a buy-in rule says about this much, with the figures filled in. */
-    private static Component refusalFor(BuyIn buyIn, long amount, long stack, long available) {
-        return buyIn.problemWith(amount, stack, available)
+    private static Component refusalFor(BuyIn buyIn, long amount, long stack,
+                                        long available, boolean joining) {
+        return buyIn.problemWith(amount, stack, available, joining)
                 .map(problem -> BuyInMessages.describe(buyIn, problem, stack, available))
                 .orElse(null);
     }

@@ -94,14 +94,18 @@ final class BuyInPrompt {
     }
 
     /**
-     * What the box starts with: the minimum when sitting, if the player can
-     * cover it, otherwise the most they can bring.
+     * What the box starts with: one buy-in's worth, as much of it as the
+     * player can cover.
+     * <p>
+     * Topping up used to start at everything they owned, which is a terrible
+     * thing to put one keypress away from confirmed. A prompt that opens on
+     * the largest number in reach is not offering a choice, it is making one.
+     * The minimum is the figure this table thinks of as "some", so it is the
+     * figure to open on whether sitting down or coming back for more.
      */
     private long suggested() {
-        return rule().map(buyIn -> {
-            long largest = buyIn.largestAddition(stack(), funds.get().availableToBuy());
-            return rebuy ? largest : Math.min(buyIn.minimum(), largest);
-        }).orElse(0L);
+        return rule().map(buyIn -> Math.min(buyIn.minimum(),
+                buyIn.largestAddition(stack(), funds.get().availableToBuy()))).orElse(0L);
     }
 
     private long entered() {
@@ -119,7 +123,7 @@ final class BuyInPrompt {
             return null;
         }
         long available = funds.get().availableToBuy();
-        return buyIn.get().problemWith(entered(), stack(), available)
+        return buyIn.get().problemWith(entered(), stack(), available, !rebuy)
                 .map(found -> BuyInMessages.describe(buyIn.get(), found, stack(), available))
                 .orElse(null);
     }
@@ -140,9 +144,15 @@ final class BuyInPrompt {
 
         rule().ifPresent(buyIn -> {
             graphics.drawString(font, rangeLine(buyIn), left + PAD, top + 20, HINT, false);
-            graphics.drawString(font, Component.translatable("tablegames.buyin.available",
-                            CreditFormat.of(funds.get().availableToBuy())),
-                    left + PAD, top + 31, HINT, false);
+            // Only while sitting down. Somebody already playing does not need
+            // the size of their whole balance put in front of them every time
+            // they reach for a few more credits, and the refusal says so
+            // plainly enough on the rare occasion they ask for too much.
+            if (!rebuy) {
+                graphics.drawString(font, Component.translatable("tablegames.buyin.available",
+                                CreditFormat.of(funds.get().availableToBuy())),
+                        left + PAD, top + 31, HINT, false);
+            }
         });
 
         box.render(graphics, mouseX, mouseY, partialTick);
