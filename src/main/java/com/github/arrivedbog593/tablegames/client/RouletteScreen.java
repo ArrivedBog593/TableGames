@@ -4,6 +4,7 @@ import com.github.arrivedbog593.tablegames.engine.games.roulette.BetType;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.Pocket;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.PocketColor;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteWheel;
+import com.github.arrivedbog593.tablegames.platform.network.PlayerFunds;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteActionPayload;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
 import com.github.arrivedbog593.tablegames.platform.network.TableActionPayload;
@@ -93,6 +94,8 @@ public class RouletteScreen extends TableScreen {
     private static final int GREEN = 0xFF1E7A46;
     private static final int OUTSIDE = 0xFF2A6B49;
     private static final int WINNER = 0xFFFFD54F;
+    /** Another player's chips: cool against the warm pip that marks your own. */
+    private static final int OTHERS = 0xFF7EC8FF;
 
     /** Red numbers on a standard wheel. Fixed by convention, both variants. */
     private static final int[] RED_NUMBERS = {
@@ -315,6 +318,13 @@ public class RouletteScreen extends TableScreen {
 
     @Override
     public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Hidden rather than skipped. Text is not drawn flat, so the field
+        // super.render puts down here came back up through the prompt's
+        // dimming and sat beside its buttons looking like part of it — and a
+        // field nobody can see should not take clicks either.
+        if (customAmount != null) {
+            customAmount.visible = prompt == null;
+        }
         super.render(graphics, mouseX, mouseY, partialTick);
 
         RouletteStatePayload state = ClientRouletteState.state();
@@ -482,19 +492,27 @@ public class RouletteScreen extends TableScreen {
         // Otherwise the second half appears only when another table is
         // holding some of it. A player who cannot see why their chips are
         // greyed out here would have no way of finding the table holding them.
-        Component balance = state.isSeated() && state.funds().hasBuyIn()
-                ? Component.translatable("tablegames.roulette.stack", format(remaining(state)))
-                : state.elsewhere() > 0
+        // Held at what it was until the strip stops. The number is withheld
+        // below for exactly this reason, and letting the chips move in the
+        // meantime would give the same answer away in a different corner of
+        // the same line.
+        boolean running = state.hasResult() && isReelRunning();
+        PlayerFunds shown = ClientRouletteState.fundsFor(running);
+        long placeable = Math.max(0L, shown.placeable() - ClientRouletteState.wageredFor(running));
+
+        Component balance = state.isSeated() && shown.hasBuyIn()
+                ? Component.translatable("tablegames.roulette.stack", format(placeable))
+                : shown.elsewhere() > 0
                 ? Component.translatable("tablegames.roulette.balance_elsewhere",
-                format(state.funds().available()), format(state.balance()))
+                format(shown.available()), format(shown.balance()))
                 : Component.translatable("tablegames.roulette.balance",
-                format(state.balance()));
+                format(shown.balance()));
         graphics.drawString(font, balance,
                 left + FELT_W - 8 - font.width(balance), top + 7, 0xFF2E7D32, false);
 
         Component middle;
         int color;
-        if (state.hasResult() && isReelRunning()) {
+        if (running) {
             // The strip is still moving. Printing the number up here while it
             // runs gives the answer away and makes the whole animation
             // pointless — the player reads the result and stops watching.
@@ -545,6 +563,14 @@ public class RouletteScreen extends TableScreen {
                 // pixels wide there is no room for both.
                 graphics.fill(spot.x() + spot.w() - 6, spot.y() + 1,
                         spot.x() + spot.w() - 2, spot.y() + 5, WINNER);
+            }
+            if (stakedByOthers(state, spot) > 0) {
+                // The other side of the spot, and a cooler colour, so a felt
+                // with chips from four players still reads at a glance as
+                // "mine there, theirs here". Without it a spectator watched a
+                // table where nobody appeared to be betting at all, and a
+                // player could not see what the rest of the table liked.
+                graphics.fill(spot.x() + 2, y1 - 5, spot.x() + 6, y1 - 1, OTHERS);
             }
 
             if (state.bettingOpen() && spot.contains(mouseX, mouseY)) {
@@ -783,9 +809,14 @@ public class RouletteScreen extends TableScreen {
                 lines.add(Component.translatable("tablegames.roulette.your_stake",
                         format(staked)).withStyle(ChatFormatting.GOLD));
             }
+            RouletteStatePayload state = ClientRouletteState.state();
+            // A pip on a fifteen-pixel cell can say that somebody backed it
+            // and nothing else. Who, and for how much, belongs here — where
+            // there is room for a line each, and where the player is already
+            // looking when they want to know.
+            addOtherStakes(lines, state, spot);
             // Clicking with an empty hand does nothing, so say why before
             // the click rather than leave it looking broken.
-            RouletteStatePayload state = ClientRouletteState.state();
             if (state.isSeated() && state.bettingOpen() && pendingAmount() <= 0) {
                 lines.add(Component.translatable("tablegames.roulette.build_stake_first")
                         .withStyle(ChatFormatting.YELLOW));
@@ -1008,8 +1039,50 @@ public class RouletteScreen extends TableScreen {
 
     /** What this player has on that exact spot. */
     private static long stakedOn(Spot spot) {
+        return stakedOn(spot, ClientRouletteState.state().myBets());
+    }
+
+    /**
+     * One line per other player with something on this spot, named and
+     * priced.
+     * <p>
+     * Named from the seat list, which the payload already carries, because a
+     * bet is only worth watching if you know whose it is: "somebody likes
+     * the third dozen" is gossip, "Dev2 has five hundred on the third dozen"
+     * is a reason to follow the next spin.
+     */
+    private void addOtherStakes(List<Component> lines, RouletteStatePayload state, Spot spot) {
+        List<RouletteStatePayload.SeatView> seats = state.table().seats();
+        for (RouletteStatePayload.SeatBets bets : state.roulette().otherBets()) {
+            long staked = stakedOn(spot, bets.wagers());
+            if (staked <= 0 || bets.seatIndex() < 0 || bets.seatIndex() >= seats.size()) {
+                continue;
+            }
+            lines.add(Component.translatable("tablegames.roulette.their_stake",
+                            seats.get(bets.seatIndex()).name(), format(staked))
+                    .withStyle(ChatFormatting.AQUA));
+        }
+    }
+
+    /**
+     * What everybody else at the table has on that spot.
+     * <p>
+     * The server has always sent this and the felt never drew it. A table
+     * where you cannot see what the others backed is not a table you can
+     * watch, and watching is most of what a casino floor is doing at any
+     * moment.
+     */
+    private static long stakedByOthers(RouletteStatePayload state, Spot spot) {
         long total = 0;
-        for (RouletteStatePayload.Wager wager : ClientRouletteState.state().myBets()) {
+        for (RouletteStatePayload.SeatBets seat : state.roulette().otherBets()) {
+            total += stakedOn(spot, seat.wagers());
+        }
+        return total;
+    }
+
+    private static long stakedOn(Spot spot, List<RouletteStatePayload.Wager> wagers) {
+        long total = 0;
+        for (RouletteStatePayload.Wager wager : wagers) {
             if (wager.type() != spot.type()) {
                 continue;
             }

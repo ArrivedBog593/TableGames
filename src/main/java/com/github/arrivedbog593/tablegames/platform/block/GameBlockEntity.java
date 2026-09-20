@@ -164,6 +164,19 @@ public abstract class GameBlockEntity extends BlockEntity {
     /** The game played at this block, if it has one and it is still registered. */
     public abstract Optional<Game> game();
 
+    /**
+     * Whether this block could be set to host something else.
+     * <p>
+     * False here, because a block built around one game is the ordinary case
+     * and a table is the exception. The setup screen asks so that it knows
+     * whether a way back to the list of games is a button or a lie: a slot
+     * machine has no list to go back to, and the one it used to draw sent a
+     * request the server quietly dropped.
+     */
+    public boolean mayChangeGame() {
+        return false;
+    }
+
 
     /**
      * The id of the game hosted here, or empty text when none is.
@@ -805,7 +818,21 @@ public abstract class GameBlockEntity extends BlockEntity {
         Game assigned = game().orElse(null);
         this.runtime = TableRuntime.forGame(assigned, this);
         this.occupancy = new TableOccupancy(
-                assigned == null ? UNASSIGNED_SEATS : Math.max(1, assigned.maxPlayers()));
+                assigned == null ? UNASSIGNED_SEATS : Math.max(1, assigned.maxPlayers()),
+                absenceSeconds());
+    }
+
+    /**
+     * How long a seat here survives with nobody looking at it.
+     * <p>
+     * A table's default is generous, and should be: a seat is one of several,
+     * a round may be live, and losing your place at poker because you tabbed
+     * out is a worse mistake than holding a chair empty for a minute. A block
+     * with one seat has the opposite problem — the seat is the whole block,
+     * and every second it is held is a second nobody else can play at all.
+     */
+    protected int absenceSeconds() {
+        return TableOccupancy.DEFAULT_ABSENCE_SECONDS;
     }
 
     /**

@@ -39,6 +39,19 @@ public class SlotMachineBlockEntity extends GameBlockEntity {
         return Optional.ofNullable(Games.slots());
     }
 
+    /**
+     * Short, because the seat is the machine.
+     * <p>
+     * Long enough to check an inventory or answer somebody, short enough that
+     * a cabinet is not held by a player who walked off. Nothing is lost when
+     * it runs out: the credits on the meter were only ever reserved against a
+     * balance, so they go back to it, and the player buys in again.
+     */
+    @Override
+    protected int absenceSeconds() {
+        return 20;
+    }
+
     /** The reels, if the registry gave this block the game it expects. */
     public Optional<SlotCabinet> reels() {
         return runtime() instanceof SlotCabinet cabinet ? Optional.of(cabinet) : Optional.empty();

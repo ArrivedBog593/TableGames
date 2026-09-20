@@ -1,6 +1,7 @@
 package com.github.arrivedbog593.tablegames.client;
 
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
+import com.github.arrivedbog593.tablegames.platform.network.PlayerFunds;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
 
 import java.util.List;
@@ -30,6 +31,18 @@ public final class ClientRouletteState {
      */
     private static List<RouletteStatePayload.Wager> lastSettledBets = List.of();
 
+    /**
+     * What the viewer had the moment before the round settled.
+     * <p>
+     * A round is settled when the wheel is released, so the chips in the
+     * packet that carries the winning pocket have already moved. Printing
+     * them while the strip is still running tells the player whether they won
+     * before the animation says so — which is the same leak the header
+     * already guards against by not printing the number, and it walked in
+     * through the figure beside it instead.
+     */
+    private static PlayerFunds fundsBeforeResult = RouletteStatePayload.idle().funds();
+
     private ClientRouletteState() {
     }
 
@@ -54,6 +67,11 @@ public final class ClientRouletteState {
         // to come from the state just before this one, not from this packet.
         if (payload.phase() == RoundPhase.RESULT && !state.myBets().isEmpty()) {
             lastSettledBets = state.myBets();
+        }
+        // Caught on the way in, from the state just before this one, for the
+        // same reason and at the same moment: by now the chips have moved.
+        if (appeared) {
+            fundsBeforeResult = state.funds();
         }
         // Losing the seat ends the session those bets belonged to. Somebody
         // who stood up and sat back down — maybe with a different stack — is
@@ -86,6 +104,32 @@ public final class ClientRouletteState {
 
     public static RouletteStatePayload state() {
         return state;
+    }
+
+    /**
+     * The viewer's chips as the header should print them while the strip is
+     * still running, and as they really are once it stops.
+     * <p>
+     * The caller decides which, because the caller owns the clock the
+     * animation runs on.
+     */
+    public static PlayerFunds fundsFor(boolean animating) {
+        return animating ? fundsBeforeResult : state.funds();
+    }
+
+    /**
+     * What the viewer had on the layout, likewise: the bets that are about to
+     * be settled while the strip runs, and nothing once it has.
+     */
+    public static long wageredFor(boolean animating) {
+        if (!animating) {
+            return wagered();
+        }
+        long total = 0;
+        for (RouletteStatePayload.Wager wager : lastSettledBets) {
+            total += wager.amount();
+        }
+        return total;
     }
 
     /** Whether the viewer holds a seat rather than only watching. */

@@ -26,9 +26,11 @@ import java.util.Map;
  * @param values     every stored setting, pending change included
  * @param configured whether the table is already open for play, which makes
  *                   going back to the list of games cost a round
+ * @param changeable whether this block could host another game at all, so
+ *                   the screen knows whether a way back exists to offer
  */
 public record OpenTableConfigPayload(BlockPos tablePos, String gameId, Map<String, Long> values,
-                                     boolean configured)
+                                     boolean configured, boolean changeable)
         implements CustomPacketPayload {
 
     public static final Type<OpenTableConfigPayload> TYPE = new Type<>(
@@ -41,11 +43,12 @@ public record OpenTableConfigPayload(BlockPos tablePos, String gameId, Map<Strin
                     ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8,
                             ByteBufCodecs.VAR_LONG), OpenTableConfigPayload::values,
                     ByteBufCodecs.BOOL, OpenTableConfigPayload::configured,
+                    ByteBufCodecs.BOOL, OpenTableConfigPayload::changeable,
                     OpenTableConfigPayload::new);
 
     public static OpenTableConfigPayload of(GameBlockEntity table) {
         return new OpenTableConfigPayload(table.getBlockPos(), table.gameId(),
-                table.settings().values(), table.isConfigured());
+                table.settings().values(), table.isConfigured(), table.mayChangeGame());
     }
 
     @Override

@@ -58,6 +58,12 @@ public class TableBlockEntity extends GameBlockEntity {
         return gameId;
     }
 
+    /** A table is the block that can be given another game, and the only one. */
+    @Override
+    public boolean mayChangeGame() {
+        return true;
+    }
+
     /** The live game when it is a roulette wheel. */
     public Optional<RouletteTable> roulette() {
         return runtime() instanceof RouletteTable wheel ? Optional.of(wheel) : Optional.empty();

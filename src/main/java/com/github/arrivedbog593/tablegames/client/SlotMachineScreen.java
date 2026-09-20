@@ -1,9 +1,11 @@
 package com.github.arrivedbog593.tablegames.client;
 
 import com.github.arrivedbog593.tablegames.engine.games.slots.Payline;
+import com.github.arrivedbog593.tablegames.engine.games.slots.Paytable;
 import com.github.arrivedbog593.tablegames.engine.games.slots.Reel;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotMachine;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotSymbol;
+import com.github.arrivedbog593.tablegames.engine.games.slots.SlotsGame;
 import com.github.arrivedbog593.tablegames.platform.network.PlayerFunds;
 import com.github.arrivedbog593.tablegames.platform.network.SlotsActionPayload;
 import com.github.arrivedbog593.tablegames.platform.network.SlotsStatePayload;
@@ -34,6 +36,11 @@ import java.util.Map;
  * The symbols are drawn as the items they are named for. Nothing in the
  * engine knows that: {@link SlotSymbol} is a list of distinct things, and
  * which picture stands for which is decided here, where pictures belong.
+ * <p>
+ * The margins either side of the glass carry the paytable, priced at the
+ * stake currently set rather than as multipliers. A cabinet that asks for
+ * money without saying what it pays is asking the player to take its word
+ * for it, and the two columns fit exactly the eight combinations there are.
  * <p>
  * The reels are animated off a local clock. While the server says they are
  * turning it has not sent what they landed on, so what scrolls past is the
@@ -83,6 +90,30 @@ public class SlotMachineScreen extends TableScreen {
      */
     private static final int[] LINE_COLOURS = {
             0x00E0B020, 0x004FA8E8, 0x005ECC5E, 0x00E06AB0, 0x00E88030,
+    };
+
+    /** One paytable column, in the margin beside the glass. */
+    private static final int PAY_COL_W = 65;
+    private static final int PAY_ROW_H = 22;
+
+    /**
+     * What the glass lists, best first, down the left margin and on down the
+     * right.
+     * <p>
+     * Every combination that pays is here — there are eight and there is room
+     * for eight — because a paytable that left one out would be worse than
+     * none at all. The odd one is two coal, which pays on the first two reels
+     * whatever the third shows; it is why the count is drawn and not assumed.
+     */
+    private static final int[][] PAY_ROWS = {
+            {SlotSymbol.NETHERITE.ordinal(), 3},
+            {SlotSymbol.DIAMOND.ordinal(), 3},
+            {SlotSymbol.EMERALD.ordinal(), 3},
+            {SlotSymbol.GOLD.ordinal(), 3},
+            {SlotSymbol.IRON.ordinal(), 3},
+            {SlotSymbol.COAL.ordinal(), 3},
+            {SlotSymbol.COAL.ordinal(), 2},
+            {SlotSymbol.REPLAY.ordinal(), 3},
     };
 
     /** Which item stands for each symbol. */
@@ -265,6 +296,7 @@ public class SlotMachineScreen extends TableScreen {
         }
 
         drawWindow(graphics, state);
+        drawPaytable(graphics, state);
         drawLineButtons(graphics, mouseX, mouseY);
         drawStakeRow(graphics, state, mouseX, mouseY);
         drawSpin(graphics, state, mouseX, mouseY);
@@ -394,6 +426,78 @@ public class SlotMachineScreen extends TableScreen {
     }
 
     /**
+     * The paytable, in the two margins the glass leaves.
+     * <p>
+     * In credits at the stake currently set, not as multipliers, because
+     * "three coal pays seven times" is an arithmetic problem and "three coal
+     * pays 21" is an answer. Change the per-line stake and the whole column
+     * moves with it, which is also the clearest way to see what raising it
+     * actually buys.
+     * <p>
+     * It is a payout for <em>one line</em>. Lines do not interact — each is
+     * read and paid on its own — so a figure per line is the whole truth and
+     * playing five of them simply gives five chances at it.
+     */
+    private void drawPaytable(GuiGraphics graphics, SlotsStatePayload state) {
+        if (prompt != null) {
+            return;
+        }
+        Paytable paytable = paytableOf(state);
+        long perLine = ClientSlotsState.perLine();
+        SlotSymbol[] all = SlotSymbol.values();
+        int rows = PAY_ROWS.length / 2;
+
+        for (int i = 0; i < PAY_ROWS.length; i++) {
+            SlotSymbol symbol = all[PAY_ROWS[i][0]];
+            int count = PAY_ROWS[i][1];
+            boolean rightHand = i >= rows;
+            int x = rightHand ? left + PANEL_W - PAD - PAY_COL_W : left + PAD;
+            int y = windowY() + (i % rows) * PAY_ROW_H;
+
+            // How many of the symbol is the stack size on the icon, which is
+            // a number Minecraft already knows how to draw in a corner. It
+            // costs no width, so a wide payout can never crowd it out — and
+            // two coal and three coal sit next to each other wearing the same
+            // picture, so the count is the only thing telling them apart.
+            ItemStack icon = new ItemStack(FACES.getOrDefault(symbol, Items.COAL), count);
+            graphics.renderItem(icon, x, y);
+            graphics.renderItemDecorations(font, icon, x, y);
+
+            Component pays = payoutOf(symbol, count, paytable, perLine);
+            graphics.drawString(font, pays, x + PAY_COL_W - font.width(pays), y + 4,
+                    symbol == SlotSymbol.REPLAY ? FREE_TEXT : LABEL_TEXT, false);
+        }
+    }
+
+    /**
+     * What a combination pays, in credits, at the stake currently set.
+     * <p>
+     * Read off the same paytable the server runs, found by the return this
+     * machine says it gives. The client is not told the multipliers and does
+     * not need to be: the four levels are part of the game, the same on both
+     * sides, and a screen that was sent them could disagree with the reels.
+     */
+    private Component payoutOf(SlotSymbol symbol, int count, Paytable paytable, long perLine) {
+        if (symbol == SlotSymbol.REPLAY) {
+            return Component.translatable("tablegames.slots.pay_free");
+        }
+        int multiple = count == 2 ? paytable.twoCoal() : paytable.multipleFor(symbol);
+        return Component.literal(format(Math.max(0, multiple * perLine)));
+    }
+
+    private static Paytable paytableOf(SlotsStatePayload state) {
+        for (SlotsGame.Payback level : SlotsGame.Payback.values()) {
+            if (level.percent().equals(state.machine().payback())) {
+                return level.paytable();
+            }
+        }
+        // A machine that has not said what it returns yet. The defaults are
+        // the right thing to show, and are what it will run if nobody says
+        // otherwise.
+        return SlotsGame.Payback.P95.paytable();
+    }
+
+    /**
      * What a turning reel shows at this row, right now.
      * <p>
      * The three rows of one reel are consecutive symbols, and the whole
@@ -508,11 +612,13 @@ public class SlotMachineScreen extends TableScreen {
         SlotsStatePayload.SpinView spin = state.spin();
         PlayerFunds funds = state.funds();
 
-        // Credits are what is left to play with, which is the stack less
-        // whatever is parked in the prize bank.
+        // Read off the cabinet, not out of the viewer's pocket: these are the
+        // numbers on the front of the machine, and somebody watching over a
+        // player's shoulder can see them in a real casino too.
+        long onMeter = funds.inCredits(state.machine().seat().credits());
         long banked = funds.inCredits(spin.prizes());
         Component credits = Component.translatable("tablegames.slots.credits",
-                format(Math.max(0, funds.stackHeld() - banked)));
+                format(Math.max(0, onMeter - banked)));
         graphics.drawString(font, credits, left + PAD, meterY(), LABEL_TEXT, false);
 
         Component prizes = Component.translatable("tablegames.slots.prizes", format(banked));
@@ -530,12 +636,27 @@ public class SlotMachineScreen extends TableScreen {
                 won > 0 ? WIN_TEXT : HINT, false);
     }
 
-    /** Insert credits, add more, or cash out: the same three acts as a table's seat. */
+    /**
+     * Insert credits, add more, or cash out — unless somebody else is at the
+     * machine, in which case it says so and offers nothing.
+     * <p>
+     * A watcher is not shown a button they cannot use. They are shown whose
+     * machine it is, which is the answer to the question they would have
+     * clicked it to find out.
+     */
     private void drawSeatButtons(GuiGraphics graphics, SlotsStatePayload state,
                                  int mouseX, int mouseY) {
         int y = seatButtonY();
         int x = left + PAD;
         boolean seated = state.isSeated();
+
+        if (state.isWatching()) {
+            Component playing = Component.translatable("tablegames.slots.in_use_by",
+                    state.machine().seat().player());
+            graphics.drawString(font, playing,
+                    left + (PANEL_W - font.width(playing)) / 2, y + 4, HINT, false);
+            return;
+        }
 
         Component first = seated
                 ? Component.translatable("tablegames.slots.add_credits")
@@ -621,7 +742,11 @@ public class SlotMachineScreen extends TableScreen {
         }
 
         int seatY = seatButtonY();
-        if (isOver(mx, my, left + PAD, seatY, SEAT_BUTTON_W, BUTTON_H)) {
+        // A watcher has no buttons down here, so the row is not clickable for
+        // them either. Letting the prompt open would only earn them a refusal
+        // after typing an amount into it.
+        if (!state.isWatching()
+                && isOver(mx, my, left + PAD, seatY, SEAT_BUTTON_W, BUTTON_H)) {
             openPrompt(state.isSeated());
             click();
             return true;

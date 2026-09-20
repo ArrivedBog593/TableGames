@@ -82,6 +82,16 @@ public class TableConfigScreen extends Screen {
     private boolean confirmingBack;
 
     /**
+     * Whether there is a list of games to go back to.
+     * <p>
+     * Only a table has one. A slot machine is its game, so the button was
+     * offering a door that was not there — it asked for confirmation and
+     * then sent a request the server dropped on the floor, which is the
+     * worst of both: it looked like it worked.
+     */
+    private final boolean changeable;
+
+    /**
      * What the player has entered so far, by setting id. Survives the rows
      * being rebuilt on a resize.
      */
@@ -106,12 +116,16 @@ public class TableConfigScreen extends Screen {
     }
 
     public TableConfigScreen(OpenTableConfigPayload payload) {
-        super(Component.translatable("tablegames.config.title"));
+        // A machine is not a table, and calling it one in its own title is
+        // the sort of small wrongness that makes a player doubt the rest.
+        super(Component.translatable(payload.changeable()
+                ? "tablegames.config.title" : "tablegames.config.title_machine"));
         this.tablePos = payload.tablePos();
         this.gameId = payload.gameId();
         this.game = Games.registry().get(gameId);
         this.stored = TableSettings.of(payload.values());
         this.configured = payload.configured();
+        this.changeable = payload.changeable();
     }
 
     public static void open(OpenTableConfigPayload payload) {
@@ -287,9 +301,11 @@ public class TableConfigScreen extends Screen {
             drawMessage(graphics, Component.translatable("tablegames.config.save_to_open"), AMBER);
         }
 
-        drawFooterButton(graphics, mouseX, mouseY, BUTTON_BACK,
-                Component.translatable("tablegames.config.back"),
-                confirmingBack ? 0xFFB07000 : 0xFF6A6A6A, true);
+        if (changeable) {
+            drawFooterButton(graphics, mouseX, mouseY, BUTTON_BACK,
+                    Component.translatable("tablegames.config.back"),
+                    confirmingBack ? 0xFFB07000 : 0xFF6A6A6A, true);
+        }
         drawFooterButton(graphics, mouseX, mouseY, BUTTON_DEFAULTS,
                 Component.translatable("tablegames.config.defaults"), 0xFF6A6A6A,
                 !rows.isEmpty());
@@ -346,7 +362,8 @@ public class TableConfigScreen extends Screen {
         }
 
         int footerY = footerY();
-        if (isOver(mx, my, footerButtonX(BUTTON_BACK), footerY, BUTTON_W, CONTROL_H)) {
+        if (changeable
+                && isOver(mx, my, footerButtonX(BUTTON_BACK), footerY, BUTTON_W, CONTROL_H)) {
             click();
             goBack();
             return true;

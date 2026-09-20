@@ -19,6 +19,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
@@ -28,11 +29,18 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * A slot machine as the player standing at it sees it.
+ * A slot machine as everybody standing at it sees it.
  * <p>
- * Everything here is addressed to one recipient, because a machine seats
- * one. There is no public half the way roulette has one: nobody else's
- * wagers are on this cabinet, and nobody else's spin lands on it.
+ * Split the way roulette's is, and for the same reason. The cabinet is
+ * public: the reels, what they landed on, what the meters read. That is
+ * what a machine puts on its own front, and a watcher who could not see it
+ * would be watching nothing. {@link PlayerFunds} is the private half — the
+ * balance behind the meter, which belongs to whoever is reading this packet
+ * and to nobody else.
+ * <p>
+ * One player, any number of watchers. Which of the two the recipient is
+ * decides nothing about what they are shown of the machine, and everything
+ * about which buttons the screen will offer them.
  * <p>
  * The reels arrive as what they are showing, not as where they stopped. A
  * client that knew the strips and the stop positions would know what the
@@ -53,23 +61,52 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
             new Type<>(ResourceLocation.fromNamespaceAndPath(TableGames.MOD_ID, "slots_state"));
 
     /**
+     * Who has the machine, and what its credit meter reads.
+     * <p>
+     * Public, all of it, and deliberately so: the meter is a number on the
+     * front of the cabinet. Anybody standing behind a player can read it in a
+     * real casino, and hiding it here would leave a watcher unable to follow
+     * the one thing they came to follow. What stays private is the balance
+     * behind it, which is in the player's pocket and travels in
+     * {@link PlayerFunds}.
+     *
+     * @param player  who is playing, by display name; empty when nobody is
+     * @param mine    whether that is the viewer
+     * @param credits what the meter holds, the prize bank included
+     */
+    public record CabinetSeat(String player, boolean mine, long credits) {
+
+        public static final CabinetSeat EMPTY = new CabinetSeat("", false, 0);
+
+        public static final StreamCodec<ByteBuf, CabinetSeat> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, CabinetSeat::player,
+                ByteBufCodecs.BOOL, CabinetSeat::mine,
+                ByteBufCodecs.VAR_LONG, CabinetSeat::credits,
+                CabinetSeat::new);
+
+        public boolean taken() {
+            return !player.isEmpty();
+        }
+    }
+
+    /**
      * The cabinet itself: how it is set up, and where the pull it is in the
      * middle of has got to.
      *
      * @param phase      ordinal of the {@link RoundPhase}
      * @param rolling    whether the reels are still turning
-     * @param seated     whether the viewer holds the seat
+     * @param seat       who is playing and what the meter reads
      * @param betMinimum the least a line may be played for
      * @param betMaximum the most, zero when only the bankroll decides
      * @param payback    the return this machine is set to, in whole percent
      */
-    public record MachineView(int phase, boolean rolling, boolean seated,
+    public record MachineView(int phase, boolean rolling, CabinetSeat seat,
                               long betMinimum, long betMaximum, String payback) {
 
         public static final StreamCodec<ByteBuf, MachineView> STREAM_CODEC = StreamCodec.composite(
                 ByteBufCodecs.VAR_INT, MachineView::phase,
                 ByteBufCodecs.BOOL, MachineView::rolling,
-                ByteBufCodecs.BOOL, MachineView::seated,
+                CabinetSeat.STREAM_CODEC, MachineView::seat,
                 ByteBufCodecs.VAR_LONG, MachineView::betMinimum,
                 ByteBufCodecs.VAR_LONG, MachineView::betMaximum,
                 ByteBufCodecs.STRING_UTF8, MachineView::payback,
@@ -151,14 +188,19 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
     /** A machine doing nothing, for a screen that has not heard from one yet. */
     public static SlotsStatePayload idle() {
         return new SlotsStatePayload(
-                new MachineView(RoundPhase.IDLE.ordinal(), false, false, 1, 0, ""),
+                new MachineView(RoundPhase.IDLE.ordinal(), false, CabinetSeat.EMPTY, 1, 0, ""),
                 new SpinView(List.of(), List.of(), 0, 0, 0, 0),
                 new PlayerFunds(0, 0, 0, 0, 0, 1));
     }
 
     /** Whether the viewer holds the machine's one seat. */
     public boolean isSeated() {
-        return machine.seated();
+        return machine.seat().mine();
+    }
+
+    /** Whether the viewer is only watching somebody else play. */
+    public boolean isWatching() {
+        return machine.seat().taken() && !machine.seat().mine();
     }
 
     public static void handleOnClient(SlotsStatePayload payload, IPayloadContext context) {
@@ -168,14 +210,31 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
 
     // --- Building it --------------------------------------------------------------------
 
-    /** Snapshots a machine for the player at it. Server side only. */
+    /**
+     * Snapshots a machine for one of the people standing at it. Server side
+     * only.
+     * <p>
+     * Watchers get the same cabinet the player does: the same reels, the same
+     * result, the same meters. What differs is only what is in their own
+     * pocket, and which buttons the screen will therefore offer them.
+     */
     public static SlotsStatePayload forPlayer(MinecraftServer server, GameBlockEntity block,
                                               SlotCabinet cabinet, UUID playerId) {
         SlotsGame game = cabinet.game();
+
+        // A spin settles the instant the handle is pulled, so by the time the
+        // first reel moves the money has already arrived. Sending it would
+        // announce the win while the symbols that explain it are still a
+        // blur — everyone watching reads the number, stops watching, and the
+        // animation is worse than pointless. So while the reels turn, what
+        // goes out is the machine as it stood once the pull was paid for and
+        // before anything came back.
+        long hidden = cabinet.isRolling() ? cabinet.lastWin() : 0;
+
         MachineView view = new MachineView(
                 block.phase().ordinal(),
                 cabinet.isRolling(),
-                block.isSeated(playerId),
+                seatOf(server, block, playerId, hidden),
                 block.settings().get(game.betMinimum()),
                 block.settings().get(game.betMaximum()),
                 game.paybackFrom(block.settings()).percent());
@@ -184,34 +243,49 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
         // client holding the landing symbols early is a client that can be
         // made to say what they are. The spin is settled by then either way,
         // so what is being protected is the surprise — which is the whole
-        // product. Only the player who pulled is shown it at all; another
-        // viewer would be reading somebody else's spin off their screen.
-        SlotMachine.SpinResult landed = !cabinet.isRolling()
-                && playerId.equals(cabinet.lastSpinner())
-                ? cabinet.lastResult().orElse(null)
-                : null;
-        // Zero while the reels turn, and not merely for tidiness: the bank is
-        // set the moment the handle is pulled, so sending it would put the
-        // win on the meter two seconds before the symbols that explain it.
-        // It is also true — a spin in progress has the whole stack riding on
-        // it and nothing set aside.
-        boolean mine = playerId.equals(cabinet.lastSpinner());
-        long prizes = mine && !cabinet.isRolling() ? cabinet.prizes() : 0;
+        // product, for the player and for anybody watching over their
+        // shoulder.
+        SlotMachine.SpinResult landed = cabinet.isRolling()
+                ? null
+                : cabinet.lastResult().orElse(null);
+        long prizes = cabinet.isRolling() ? 0 : cabinet.prizes();
         SpinView spin = landed == null
                 ? new SpinView(List.of(), List.of(), 0, prizes, 0, 0)
                 : new SpinView(flatten(landed), winners(landed), cabinet.lastWin(), prizes,
                         cabinet.freeLines(), cabinet.freePerLine());
 
+        // The viewer's own money, which is nobody else's business. A watcher
+        // sees their own balance here and the player's meter above; that is
+        // the same split a real floor has.
+        boolean mine = block.isSeated(playerId);
+        long ofMine = mine ? hidden : 0;
         Optional<BuyIn> buyIn = block.buyIn();
         PlayerFunds funds = new PlayerFunds(
-                CreditStorage.get(server).balanceOf(playerId),
+                Math.max(0, CreditStorage.get(server).balanceOf(playerId) - ofMine),
                 OutcomeSettler.stakes().committedElsewhere(playerId, block.commitmentKey()),
-                block.stackOf(playerId),
+                Math.max(0, block.stackOf(playerId) - ofMine),
                 buyIn.map(BuyIn::minimum).orElse(0L),
                 buyIn.map(BuyIn::maximum).orElse(0L),
                 game.denominationFrom(block.settings()));
 
         return new SlotsStatePayload(view, spin, funds);
+    }
+
+    /** Who holds the machine, as everyone standing at it may see them. */
+    private static CabinetSeat seatOf(MinecraftServer server, GameBlockEntity block,
+                                      UUID viewer, long hidden) {
+        List<UUID> seated = block.seatedPlayers();
+        if (seated.isEmpty()) {
+            return CabinetSeat.EMPTY;
+        }
+        UUID occupant = seated.getFirst();
+        ServerPlayer playing = server.getPlayerList().getPlayer(occupant);
+        // Never empty, because empty is how the screen is told the machine is
+        // free — and a machine with somebody in the seat is not free just
+        // because their name could not be looked up.
+        String name = playing == null ? "?" : playing.getGameProfile().getName();
+        return new CabinetSeat(name, occupant.equals(viewer),
+                Math.max(0, block.stackOf(occupant) - hidden));
     }
 
     private static List<Integer> flatten(SlotMachine.SpinResult result) {

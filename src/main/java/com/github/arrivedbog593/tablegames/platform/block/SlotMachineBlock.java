@@ -38,12 +38,17 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * A slot machine: a cabinet you stand at alone.
+ * A slot machine: a cabinet one person plays and anybody may watch.
  * <p>
  * Its own block rather than a game a table can be set to, because a table is
  * a table. A block shaped like one that opens three spinning reels reads as
  * a bug however the code is arranged, and the shape a player sees is the
  * only documentation most of them will ever get.
+ * <p>
+ * One seat, but no limit on who stands behind it. Opening a cabinet somebody
+ * else is playing shows their reels turning and their meters moving, and
+ * offers none of the buttons — which is what standing at a machine in a
+ * casino gets you.
  * <p>
  * What it hosts is fixed, so there is no game to pick: a bare click on a
  * machine nobody has set up goes straight to its settings, and a click on a
@@ -193,9 +198,11 @@ public class SlotMachineBlock extends BaseEntityBlock implements GameBlock {
             return InteractionResult.CONSUME;
         }
 
-        // One seat, so standing at the machine and playing it are the same
-        // act — unlike a table, where watching is a thing people do. The
-        // seat is still taken separately, because taking it reserves credits.
+        // Anybody may stand at a cabinet; only one may play it. Opening it
+        // makes you a watcher, and a watcher sees what the player sees — the
+        // reels turning, what they landed on, what the meters say — because
+        // that is what standing behind somebody at a machine is. Taking the
+        // seat is the separate act, and the screen says who has it.
         machine.arrive(serverPlayer.getUUID());
         // State first, so the screen has something to draw on its first frame.
         CustomPacketPayload snapshot = machine.stateFor(level.getServer(), serverPlayer.getUUID());
