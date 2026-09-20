@@ -64,9 +64,13 @@
 
   "tablegames.setting.slots.payback": "Devolución",
   "tablegames.setting.slots.denomination": "Valor del crédito (cuánto cuesta un crédito)",
+  "tablegames.setting.slots.payback.85": "Devuelve el 85%",
+  "tablegames.setting.slots.payback.88": "Devuelve el 88%",
   "tablegames.setting.slots.payback.90": "Devuelve el 90%",
   "tablegames.setting.slots.payback.92": "Devuelve el 92%",
+  "tablegames.setting.slots.payback.94": "Devuelve el 94%",
   "tablegames.setting.slots.payback.95": "Devuelve el 95%",
+  "tablegames.setting.slots.payback.96": "Devuelve el 96%",
   "tablegames.setting.slots.payback.97": "Devuelve el 97%",
   "tablegames.setting.slots.bet_min": "Mínimo por línea",
   "tablegames.setting.slots.bet_max": "Máximo por línea (0 = sin límite de la máquina)",
@@ -406,6 +410,7 @@
 
   "tablegames.command.table.none_in_sight": "Primero mira hacia una mesa de juego",
   "tablegames.command.table.not_a_table": "Eso no es una mesa de juego",
+  "tablegames.command.table.not_a_game_block": "Ahí no hay nada a lo que jugar",
   "tablegames.command.table.not_yours": "Esta mesa no es tuya para configurarla",
   "tablegames.command.table.not_owner": "Solo el dueño de esta mesa puede compartirla",
 
@@ -441,6 +446,8 @@
   "tablegames.command.table.info_thinking": "aún apostando",
   "tablegames.command.table.info_inside": "  Dentro: de %s a %s (%s)",
   "tablegames.command.table.info_outside": "  Fuera: de %s a %s (%s)",
+  "tablegames.command.table.info_payback": "  Devolución: %s%%",
+  "tablegames.command.table.info_denomination": "  Valor del crédito: %s",
   "tablegames.command.table.info_by_table": "límite de la mesa",
   "tablegames.command.table.info_by_house": "límite de la casa",
 

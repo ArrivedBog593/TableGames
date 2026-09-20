@@ -4,10 +4,12 @@ import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetLimits;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetType;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteGame;
+import com.github.arrivedbog593.tablegames.engine.games.slots.SlotsGame;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
 import com.github.arrivedbog593.tablegames.engine.table.TableAccess;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
+import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.block.RouletteTable;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
@@ -275,8 +277,16 @@ public final class TableCommands {
      * {@code table games} — so the one command that knew which table you
      * meant was the one that ignored it.
      */
+    /**
+     * Reports on whatever game block is being looked at, table or machine.
+     * <p>
+     * The only command in this family that means anything at a cabinet. The
+     * rest set a game, clear it, or post roulette limits, and a machine has
+     * one game it cannot be talked out of — but "what is this thing set to
+     * and who is on it" is a fair question to ask of any of them.
+     */
     private static int info(CommandSourceStack source) throws CommandSyntaxException {
-        TableBlockEntity table = lookedAtTable(source);
+        GameBlockEntity table = lookedAtGameBlock(source);
         if (table == null) {
             return 0;
         }
@@ -327,12 +337,27 @@ public final class TableCommands {
         // Both, and labeled, because a single figure cannot say whether it is
         // the house's ceiling or the table's own choice — and "maximum 5,000"
         // is baffling next to a bankroll that could cover far more.
-        table.roulette().ifPresent(wheel -> {
-            reportLimit(source, wheel, server, BetType.STRAIGHT_UP,
-                    "tablegames.command.table.info_inside");
-            reportLimit(source, wheel, server, BetType.RED,
-                    "tablegames.command.table.info_outside");
-        });
+        if (table instanceof TableBlockEntity felt) {
+            felt.roulette().ifPresent(wheel -> {
+                reportLimit(source, wheel, server, BetType.STRAIGHT_UP,
+                        "tablegames.command.table.info_inside");
+                reportLimit(source, wheel, server, BetType.RED,
+                        "tablegames.command.table.info_outside");
+            });
+        }
+
+        // A machine's two headline numbers, for the same reason the felt
+        // reports its limits: they are what somebody walking the floor with
+        // a command actually wants to check, and the alternative is opening
+        // the setup screen on every cabinet in the building.
+        if (assigned instanceof SlotsGame slots) {
+            source.sendSuccess(() -> Component.translatable(
+                    "tablegames.command.table.info_payback",
+                    slots.paybackFrom(table.settings()).percent()), false);
+            source.sendSuccess(() -> Component.translatable(
+                    "tablegames.command.table.info_denomination",
+                    CreditFormat.of(slots.denominationFrom(table.settings()))), false);
+        }
         return 1;
     }
 
@@ -536,7 +561,28 @@ public final class TableCommands {
      * Ray traces rather than trusting the crosshair target the client claims,
      * because a client is free to claim anything.
      */
+    /**
+     * The table being looked at, refusing a machine by name.
+     * <p>
+     * Everything but {@code info} sets or clears a game, or posts limits on
+     * a felt, so a cabinet is genuinely the wrong block to be pointing at
+     * and saying so is more use than a generic refusal.
+     */
     private static TableBlockEntity lookedAtTable(CommandSourceStack source)
+            throws CommandSyntaxException {
+        GameBlockEntity block = lookedAtGameBlock(source);
+        if (block == null) {
+            return null;
+        }
+        if (!(block instanceof TableBlockEntity table)) {
+            source.sendFailure(Component.translatable("tablegames.command.table.not_a_table"));
+            return null;
+        }
+        return table;
+    }
+
+    /** Whichever block a game is played at, as long as one is in sight. */
+    private static GameBlockEntity lookedAtGameBlock(CommandSourceStack source)
             throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         Vec3 eye = player.getEyePosition();
@@ -554,10 +600,11 @@ public final class TableCommands {
         }
         BlockPos pos = hit.getBlockPos();
         BlockEntity entity = player.level().getBlockEntity(pos);
-        if (!(entity instanceof TableBlockEntity table)) {
-            source.sendFailure(Component.translatable("tablegames.command.table.not_a_table"));
+        if (!(entity instanceof GameBlockEntity block)) {
+            source.sendFailure(Component.translatable(
+                    "tablegames.command.table.not_a_game_block"));
             return null;
         }
-        return table;
+        return block;
     }
 }

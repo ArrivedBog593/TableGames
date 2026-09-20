@@ -26,12 +26,38 @@ import java.util.random.RandomGenerator;
  */
 public final class SlotsGame implements Game {
 
-    /** The paytables a table may run, and the return each one is labelled with. */
+    /**
+     * The paytables a machine may run, and the return each one is labelled
+     * with, loosest last.
+     * <p>
+     * Worked out from the 95 card rather than each on its own, so the ladder
+     * holds one promise a player can check: <em>no machine ever pays less
+     * than a tighter one</em>. Every multiple below is at least the multiple
+     * above it, which is not free — the return is a weighted sum of six
+     * integers, and landing eight targets inside a tenth of a point while
+     * keeping that order took solving the ladder outwards from the middle.
+     * <p>
+     * The shape that fell out of it is the one a real floor has. Tightening
+     * a machine takes the small, frequent wins down — three coal drops from
+     * seven to five between 95 and 85 — while the jackpot stays where it is,
+     * because the jackpot is the advertisement and nobody is drawn across a
+     * room by a good price on coal. Loosening past 95 does the opposite and
+     * only grows the top prize: a 97 pays exactly what a 95 does on
+     * everything else.
+     * <p>
+     * Each level is pinned to its label by a test that counts the return
+     * over all 32768 ways the reels can stop. A card that does not pay what
+     * it says fails the build.
+     */
     public enum Payback {
-        P90("90", 6, 14, 27, 68, 135, 590),
-        P92("92", 6, 14, 28, 70, 135, 630),
+        P85("85", 5, 12, 25, 63, 125, 661),
+        P88("88", 5, 13, 27, 64, 130, 662),
+        P90("90", 6, 13, 27, 66, 130, 664),
+        P92("92", 6, 14, 27, 67, 138, 668),
+        P94("94", 7, 14, 27, 69, 138, 670),
         P95("95", 7, 14, 28, 70, 140, 670),
-        P97("97", 7, 14, 28, 72, 145, 720);
+        P96("96", 7, 14, 28, 70, 140, 710),
+        P97("97", 7, 14, 28, 70, 140, 751);
 
         /** Coal on the first two reels pays the same at every level. */
         private static final int TWO_COAL = 2;

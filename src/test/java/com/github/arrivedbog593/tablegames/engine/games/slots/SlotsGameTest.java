@@ -106,9 +106,31 @@ class SlotsGameTest {
 
     @Test
     void theChosenPaybackIsTheOneTheMachineRuns() {
-        TableSettings generous = TableSettings.empty().with(GAME.payback(), 3);
+        // By ordinal rather than by a number typed here: the ladder has grown
+        // once already, and a test that hard-codes a position starts lying
+        // the moment a level is added in the middle of it.
+        TableSettings generous = TableSettings.empty()
+                .with(GAME.payback(), SlotsGame.Payback.P97.ordinal());
         assertEquals(SlotsGame.Payback.P97, GAME.paybackFrom(generous));
         assertEquals(SlotsGame.Payback.P97.paytable(), GAME.machineFor(generous).paytable());
+    }
+
+    @Test
+    void noMachineEverPaysLessThanATighterOne() {
+        // The one promise the ladder makes that a player could check by
+        // walking between two cabinets. Each level is built from the one
+        // beside it, so nothing here is guaranteed by construction.
+        SlotsGame.Payback[] ladder = SlotsGame.Payback.values();
+        for (int i = 1; i < ladder.length; i++) {
+            for (SlotSymbol symbol : SlotSymbol.values()) {
+                if (symbol == SlotSymbol.REPLAY) {
+                    continue;
+                }
+                assertTrue(ladder[i].paytable().multipleFor(symbol)
+                                >= ladder[i - 1].paytable().multipleFor(symbol),
+                        ladder[i] + " pays less than " + ladder[i - 1] + " for " + symbol);
+            }
+        }
     }
 
     @Test
