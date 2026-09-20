@@ -1,11 +1,11 @@
 package com.github.arrivedbog593.tablegames.client;
 
-import com.github.arrivedbog593.tablegames.platform.block.TableBlock;
+import com.github.arrivedbog593.tablegames.platform.block.GameBlock;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 
 /**
- * Whether a screen opened on a table still has a table in front of it.
+ * Whether a screen opened on a game block still has one in front of it.
  * <p>
  * Plain screens get no {@code stillValid} the way container screens do, so
  * each one asks every tick. Two ways to lose the table: walking away from it,
@@ -26,6 +26,6 @@ final class TablePresence {
             return false;
         }
         return minecraft.player.distanceToSqr(tablePos.getCenter()) > MAX_DISTANCE_SQUARED
-                || !(minecraft.level.getBlockState(tablePos).getBlock() instanceof TableBlock);
+                || !(minecraft.level.getBlockState(tablePos).getBlock() instanceof GameBlock);
     }
 }

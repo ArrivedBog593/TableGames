@@ -24,6 +24,9 @@ public final class ModItems {
     public static final DeferredItem<BlockItem> SHOP =
             ITEMS.registerSimpleBlockItem("shop", ModBlocks.SHOP, new Item.Properties());
 
+    public static final DeferredItem<BlockItem> SLOT_MACHINE =
+            ITEMS.registerSimpleBlockItem("slot_machine", ModBlocks.SLOT_MACHINE, new Item.Properties());
+
     /**
      * Opens a casino block's settings instead of using it.
      * <p>

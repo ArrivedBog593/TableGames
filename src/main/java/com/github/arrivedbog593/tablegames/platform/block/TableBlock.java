@@ -1,6 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
 import com.github.arrivedbog593.tablegames.engine.game.Game;
+import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.github.arrivedbog593.tablegames.platform.item.AdminKeyItem;
 import com.github.arrivedbog593.tablegames.platform.item.TableKeyItem;
 import com.github.arrivedbog593.tablegames.platform.network.OpenGamePickerPayload;
@@ -39,6 +40,8 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -48,7 +51,7 @@ import java.util.Optional;
  * block type, so the mod registers one block no matter how many games exist.
  * The {@link #VARIANT} property only mirrors that choice for the model.
  */
-public class TableBlock extends BaseEntityBlock {
+public class TableBlock extends BaseEntityBlock implements GameBlock {
 
     public static final MapCodec<TableBlock> CODEC = simpleCodec(TableBlock::new);
 
@@ -161,9 +164,9 @@ public class TableBlock extends BaseEntityBlock {
                 || !(player instanceof ServerPlayer serverPlayer)) {
             return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
         }
-        if (!table.mayConfigure(serverPlayer)) {
-            serverPlayer.displayClientMessage(
-                    Component.translatable("tablegames.command.table.not_yours"), true);
+        Component refusal = table.configureRefusal(serverPlayer);
+        if (refusal != null) {
+            serverPlayer.displayClientMessage(refusal, true);
             return ItemInteractionResult.CONSUME;
         }
         openSetup(serverPlayer, table);
@@ -174,12 +177,22 @@ public class TableBlock extends BaseEntityBlock {
      * Shows whichever setup step the table is at: the list of games when it
      * hosts none, that game's settings once one is chosen.
      * <p>
-     * Callers check the player may configure the table first.
+     * The list holds only the games this player may put here, decided on the
+     * server: a player without authority over the house is not offered a
+     * roulette they would only be refused, and nobody is offered a game that
+     * belongs in a machine of its own. Callers check the player may configure
+     * the table first.
      */
     public static void openSetup(ServerPlayer player, TableBlockEntity table) {
         if (table.game().isEmpty()) {
+            List<String> allowed = new ArrayList<>();
+            for (Game game : Games.tableGames()) {
+                if (table.mayHost(player, game)) {
+                    allowed.add(game.id());
+                }
+            }
             PacketDistributor.sendToPlayer(player,
-                    new OpenGamePickerPayload(table.getBlockPos()));
+                    new OpenGamePickerPayload(table.getBlockPos(), allowed));
         } else {
             PacketDistributor.sendToPlayer(player, OpenTableConfigPayload.of(table));
         }
@@ -210,6 +223,9 @@ public class TableBlock extends BaseEntityBlock {
         if (assigned.isEmpty() || !table.isConfigured()) {
             if (table.mayConfigure(serverPlayer)) {
                 openSetup(serverPlayer, table);
+            } else if (table.mayClear(serverPlayer)) {
+                // Their table, but a house game they may not set up.
+                player.displayClientMessage(table.configureRefusal(serverPlayer), true);
             } else {
                 player.displayClientMessage(Component.translatable(assigned.isEmpty()
                         ? "tablegames.table.unassigned"

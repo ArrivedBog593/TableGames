@@ -65,19 +65,32 @@ public record ChooseGamePayload(BlockPos tablePos, String gameId) implements Cus
                     instanceof TableBlockEntity table)) {
                 return;
             }
-            if (!table.mayConfigure(player)) {
-                player.sendSystemMessage(Component.translatable(
-                        "tablegames.command.table.not_yours").withStyle(ChatFormatting.RED));
-                return;
-            }
-
             if (payload.gameId().isEmpty()) {
+                // Back: whoever may empty the table, which includes the owner
+                // of a house game they may not otherwise touch.
+                if (!table.mayClear(player)) {
+                    refuse(player, Component.translatable("tablegames.command.table.not_yours"));
+                    return;
+                }
                 if (table.game().isPresent()) {
                     table.setGame(null);
                 }
             } else {
                 Optional<Game> chosen = Games.registry().get(payload.gameId());
                 if (chosen.isEmpty()) {
+                    return;
+                }
+                // A registered game is not the same as a game a table can
+                // host: slots are registered too, and belong in a cabinet.
+                // The picker never offered it, so a client asking for one is
+                // not a player who misclicked.
+                if (!Games.fitsOnATable(chosen.get())) {
+                    return;
+                }
+                if (!table.mayHost(player, chosen.get())) {
+                    refuse(player, Component.translatable(table.mayClear(player)
+                            ? "tablegames.table.house_game_staff_only"
+                            : "tablegames.command.table.not_yours"));
                     return;
                 }
                 // Only an empty table takes a new game this way. Somebody else
@@ -87,7 +100,18 @@ public record ChooseGamePayload(BlockPos tablePos, String gameId) implements Cus
                     table.setGame(chosen.get());
                 }
             }
+            // Whatever the table now hosts may be a game somebody else picked
+            // meanwhile, and not one this player may set up.
+            Component refusal = table.configureRefusal(player);
+            if (refusal != null) {
+                refuse(player, refusal);
+                return;
+            }
             TableBlock.openSetup(player, table);
         });
+    }
+
+    private static void refuse(ServerPlayer player, Component reason) {
+        player.sendSystemMessage(reason.copy().withStyle(ChatFormatting.RED));
     }
 }

@@ -1,7 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.network;
 
 import com.github.arrivedbog593.tablegames.TableGames;
-import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
+import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -42,7 +42,7 @@ public record CloseTablePayload(BlockPos tablePos) implements CustomPacketPayloa
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player
                     && player.level().getBlockEntity(payload.tablePos())
-                    instanceof TableBlockEntity table) {
+                    instanceof GameBlockEntity table) {
                 table.leaveScreen(player.getUUID());
             }
         });

@@ -4,7 +4,7 @@ import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
-import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
+import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -69,11 +69,12 @@ public record TableConfigPayload(BlockPos tablePos, String gameId, Map<String, L
                 return;
             }
             if (!(player.level().getBlockEntity(payload.tablePos())
-                    instanceof TableBlockEntity table)) {
+                    instanceof GameBlockEntity table)) {
                 return;
             }
-            if (!table.mayConfigure(player)) {
-                refuse(player, Component.translatable("tablegames.command.table.not_yours"));
+            Component refusal = table.configureRefusal(player);
+            if (refusal != null) {
+                refuse(player, refusal);
                 return;
             }
 

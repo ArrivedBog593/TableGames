@@ -2,7 +2,7 @@ package com.github.arrivedbog593.tablegames.platform.network;
 
 import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.engine.table.SeatChange;
-import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
+import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -67,7 +67,7 @@ public record TableActionPayload(int kind, BlockPos tablePos, long amount)
                 return;
             }
             if (!(player.level().getBlockEntity(payload.tablePos())
-                    instanceof TableBlockEntity table)) {
+                    instanceof GameBlockEntity table)) {
                 return;
             }
             // Nobody who never opened the table is at it, whatever

@@ -1,7 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.network;
 
 import com.github.arrivedbog593.tablegames.TableGames;
-import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
+import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -43,7 +43,7 @@ public record OpenTableConfigPayload(BlockPos tablePos, String gameId, Map<Strin
                     ByteBufCodecs.BOOL, OpenTableConfigPayload::configured,
                     OpenTableConfigPayload::new);
 
-    public static OpenTableConfigPayload of(TableBlockEntity table) {
+    public static OpenTableConfigPayload of(GameBlockEntity table) {
         return new OpenTableConfigPayload(table.getBlockPos(), table.gameId(),
                 table.settings().values(), table.isConfigured());
     }

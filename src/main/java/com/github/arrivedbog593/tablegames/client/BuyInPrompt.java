@@ -3,7 +3,7 @@ package com.github.arrivedbog593.tablegames.client;
 import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.platform.economy.BuyInMessages;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
-import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
+import com.github.arrivedbog593.tablegames.platform.network.PlayerFunds;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
@@ -45,7 +45,7 @@ final class BuyInPrompt {
 
     private final Font font;
     private final boolean rebuy;
-    private final Supplier<RouletteStatePayload.Funds> funds;
+    private final Supplier<PlayerFunds> funds;
     private final LongConsumer onConfirm;
     private final Runnable onCancel;
 
@@ -60,7 +60,7 @@ final class BuyInPrompt {
      * @param onConfirm handed the amount once it passes the table's rule
      */
     BuyInPrompt(Font font, boolean rebuy, int centerX, int centerY,
-                Supplier<RouletteStatePayload.Funds> funds,
+                Supplier<PlayerFunds> funds,
                 LongConsumer onConfirm, Runnable onCancel) {
         this.font = font;
         this.rebuy = rebuy;
@@ -90,7 +90,7 @@ final class BuyInPrompt {
     }
 
     private long stack() {
-        return rebuy ? funds.get().stack() : 0;
+        return rebuy ? funds.get().stackHeld() : 0;
     }
 
     /**
@@ -99,7 +99,7 @@ final class BuyInPrompt {
      */
     private long suggested() {
         return rule().map(buyIn -> {
-            long largest = buyIn.largestAddition(stack(), funds.get().available());
+            long largest = buyIn.largestAddition(stack(), funds.get().availableToBuy());
             return rebuy ? largest : Math.min(buyIn.minimum(), largest);
         }).orElse(0L);
     }
@@ -118,7 +118,7 @@ final class BuyInPrompt {
         if (buyIn.isEmpty()) {
             return null;
         }
-        long available = funds.get().available();
+        long available = funds.get().availableToBuy();
         return buyIn.get().problemWith(entered(), stack(), available)
                 .map(found -> BuyInMessages.describe(buyIn.get(), found, stack(), available))
                 .orElse(null);
@@ -137,7 +137,7 @@ final class BuyInPrompt {
         rule().ifPresent(buyIn -> {
             graphics.drawString(font, rangeLine(buyIn), left + PAD, top + 20, HINT, false);
             graphics.drawString(font, Component.translatable("tablegames.buyin.available",
-                            CreditFormat.of(funds.get().available())),
+                            CreditFormat.of(funds.get().availableToBuy())),
                     left + PAD, top + 31, HINT, false);
         });
 
@@ -154,6 +154,14 @@ final class BuyInPrompt {
                 graphics.drawString(font, lines.get(i), left + PAD, top + 68 + i * 10,
                         ERROR, false);
             }
+        } else if (funds.get().priced()) {
+            // What the credits being bought actually cost. The box is in the
+            // machine's own credits, and nobody should have to multiply in
+            // their head to find out what is leaving their balance.
+            graphics.drawString(font, Component.translatable("tablegames.buyin.price",
+                            CreditFormat.of(entered()),
+                            CreditFormat.of(funds.get().inBalance(entered()))),
+                    left + PAD, top + 68, HINT, false);
         }
 
         drawButton(graphics, mouseX, mouseY, cancelX(), buttonY(), BUTTON_W,
@@ -220,7 +228,7 @@ final class BuyInPrompt {
         }
         if (isOver(mouseX, mouseY, maxX(), top + 48, SMALL_W, CONTROL_H)) {
             rule().ifPresent(buyIn -> box.setValue(String.valueOf(
-                    buyIn.largestAddition(stack(), funds.get().available()))));
+                    buyIn.largestAddition(stack(), funds.get().availableToBuy()))));
             return true;
         }
         if (isOver(mouseX, mouseY, cancelX(), buttonY(), BUTTON_W, CONTROL_H)) {
@@ -234,10 +242,17 @@ final class BuyInPrompt {
         return false;
     }
 
-    /** Enter in the box, or the button. Does nothing while the amount would be refused. */
+    /**
+     * Enter in the box, or the button. Does nothing while the amount would be
+     * refused.
+     * <p>
+     * Handed on in the balance's currency, not in the machine's credits. The
+     * prompt is the last place that knows about a denomination; the packet,
+     * the seat and the stack all deal in one currency.
+     */
     void confirm() {
         if (problem() == null) {
-            onConfirm.accept(entered());
+            onConfirm.accept(funds.get().inBalance(entered()));
         }
     }
 

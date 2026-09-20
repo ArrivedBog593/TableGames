@@ -43,7 +43,7 @@ public final class RouletteTable implements TableRuntime {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private final TableBlockEntity table;
+    private final GameBlockEntity table;
     private final RouletteGame game;
 
     private final BettingWindow window = new BettingWindow();
@@ -57,7 +57,7 @@ public final class RouletteTable implements TableRuntime {
 
     private Pocket lastResult;
 
-    RouletteTable(TableBlockEntity table, RouletteGame game) {
+    RouletteTable(GameBlockEntity table, RouletteGame game) {
         this.table = table;
         this.game = game;
     }

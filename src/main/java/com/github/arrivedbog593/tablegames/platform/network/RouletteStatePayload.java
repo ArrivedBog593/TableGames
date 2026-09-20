@@ -6,8 +6,8 @@ import com.github.arrivedbog593.tablegames.engine.games.roulette.Pocket;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteBet;
 import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
+import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.block.RouletteTable;
-import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.mojang.authlib.GameProfile;
@@ -165,63 +165,6 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
         }
     }
 
-    /**
-     * What the viewer has, and what of it is already spoken for.
-     * <p>
-     * A record of its own rather than two more fields on
-     * {@link RouletteView}, because {@code StreamCodec.composite} stops at
-     * six components and the view was already using all six. Grouping is
-     * cheaper than a handwritten codec and says something true besides:
-     * these numbers are only meaningful together.
-     *
-     * @param balance   the viewer's credits, never anybody else's
-     * @param elsewhere what of that balance is riding on other tables, so the
-     *                  screen can grey out a chip this table would refuse.
-     *                  Without it, a player with credits committed across the
-     *                  room sees every chip lit and finds out by clicking.
-     *                  Their stake on <em>this</em> table is not in here: the
-     *                  screen already shows that separately, and this table's
-     *                  rules leave room for the wagers it is holding
-     * @param stack        what the viewer bought in with here, as it stands
-     * @param buyInMinimum the least a player sits down with, or zero when this
-     *                     table takes wagers straight from the balance
-     * @param buyInMaximum the most a stack may hold, zero for no ceiling
-     */
-    public record Funds(long balance, long elsewhere, long stack,
-                        long buyInMinimum, long buyInMaximum) {
-
-        public static final StreamCodec<ByteBuf, Funds> STREAM_CODEC =
-                StreamCodec.composite(
-                        ByteBufCodecs.VAR_LONG, Funds::balance,
-                        ByteBufCodecs.VAR_LONG, Funds::elsewhere,
-                        ByteBufCodecs.VAR_LONG, Funds::stack,
-                        ByteBufCodecs.VAR_LONG, Funds::buyInMinimum,
-                        ByteBufCodecs.VAR_LONG, Funds::buyInMaximum,
-                        Funds::new);
-
-        public boolean hasBuyIn() {
-            return buyInMinimum > 0;
-        }
-
-        /** The buy-in rule, for a table that has one. */
-        public Optional<BuyIn> buyIn() {
-            return hasBuyIn() ? Optional.of(new BuyIn(buyInMinimum, buyInMaximum))
-                    : Optional.empty();
-        }
-
-        /**
-         * The most the viewer may have on this felt in total: their stack, or
-         * at a table without one, whatever other tables are not holding.
-         */
-        public long placeable() {
-            return hasBuyIn() ? stack : Math.max(0L, balance - elsewhere);
-        }
-
-        /** What the viewer could still reserve here, for a buy-in or a top-up. */
-        public long available() {
-            return Math.max(0L, balance - elsewhere - stack);
-        }
-    }
 
     /**
      * What is addressed to the recipient alone.
@@ -233,7 +176,7 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
      * @param myBets       the viewer's own wagers
      * @param otherBets    everybody else's, by seat, so the felt is complete
      */
-    public record RouletteView(Funds funds, long tableMinimum, long tableMaximum,
+    public record RouletteView(PlayerFunds funds, long tableMinimum, long tableMaximum,
                                int result, List<Wager> myBets, List<SeatBets> otherBets) {
 
         public long balance() {
@@ -250,7 +193,7 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
 
         public static final StreamCodec<ByteBuf, RouletteView> STREAM_CODEC =
                 StreamCodec.composite(
-                        Funds.STREAM_CODEC, RouletteView::funds,
+                        PlayerFunds.STREAM_CODEC, RouletteView::funds,
                         ByteBufCodecs.VAR_LONG, RouletteView::tableMinimum,
                         ByteBufCodecs.VAR_LONG, RouletteView::tableMaximum,
                         ByteBufCodecs.VAR_INT, RouletteView::result,
@@ -276,7 +219,7 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
     public static RouletteStatePayload idle() {
         return new RouletteStatePayload(
                 new TableView(RoundPhase.IDLE.ordinal(), 0, List.of(), 0, NO_SEAT, 0),
-                new RouletteView(new Funds(0, 0, 0, 0, 0), 0, 0, NO_RESULT,
+                new RouletteView(new PlayerFunds(0, 0, 0, 0, 0, 1), 0, 0, NO_RESULT,
                         List.of(), List.of()));
     }
 
@@ -299,7 +242,7 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
         return roulette.placeable();
     }
 
-    public Funds funds() {
+    public PlayerFunds funds() {
         return roulette.funds();
     }
 
@@ -350,7 +293,7 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
     // --- Building it --------------------------------------------------------------------
 
     /** Snapshots a table for one player. Server side only. */
-    public static RouletteStatePayload forPlayer(MinecraftServer server, TableBlockEntity table,
+    public static RouletteStatePayload forPlayer(MinecraftServer server, GameBlockEntity table,
                                                  RouletteTable wheel, UUID playerId) {
         List<SeatView> seatViews = new ArrayList<>();
         List<SeatBets> otherBets = new ArrayList<>();
@@ -388,13 +331,16 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
 
         Optional<BuyIn> buyIn = table.buyIn();
         RouletteView mine = new RouletteView(
-                new Funds(
+                new PlayerFunds(
                         CreditStorage.get(server).balanceOf(playerId),
                         OutcomeSettler.stakes()
                                 .committedElsewhere(playerId, table.commitmentKey()),
                         table.stackOf(playerId),
                         buyIn.map(BuyIn::minimum).orElse(0L),
-                        buyIn.map(BuyIn::maximum).orElse(0L)),
+                        buyIn.map(BuyIn::maximum).orElse(0L),
+                        // A felt has no credits of its own: a chip is worth
+                        // what it says on it.
+                        1L),
                 wheel.effectiveMinimum(BetType.STRAIGHT_UP),
                 wheel.currentTableMaximum(server),
                 packed,

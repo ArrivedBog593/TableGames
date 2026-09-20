@@ -42,7 +42,7 @@ public final class TableEvents {
                     continue;
                 }
                 for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
-                    if (blockEntity instanceof TableBlockEntity table) {
+                    if (blockEntity instanceof GameBlockEntity table) {
                         table.leaveScreen(player.getUUID());
                     }
                 }

@@ -24,6 +24,7 @@ public final class ModCreativeTabs {
                         output.accept(ModItems.TABLE.get());
                         output.accept(ModItems.CASHIER.get());
                         output.accept(ModItems.SHOP.get());
+                        output.accept(ModItems.SLOT_MACHINE.get());
                         output.accept(ModItems.TABLE_KEY.get());
                         // Unbound, so it works for operators and nobody else.
                         // Anyone administering without operator rights gets a

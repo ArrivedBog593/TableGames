@@ -2,6 +2,7 @@ package com.github.arrivedbog593.tablegames.platform.block;
 
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteGame;
+import com.github.arrivedbog593.tablegames.engine.games.slots.SlotsGame;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.MinecraftServer;
@@ -9,25 +10,28 @@ import net.minecraft.server.MinecraftServer;
 import java.util.UUID;
 
 /**
- * The live part of one game at one table: its round, its wagers, what it
+ * The live part of one game at one block: its round, its wagers, what it
  * tells the people watching.
  * <p>
- * Split from {@link TableBlockEntity} so that the block keeps only what every
+ * Split from {@link GameBlockEntity} so that the block keeps only what every
  * game shares — which game it hosts, how it is set up, who owns it, who is
  * sitting, what each player bought in with, and what all of that commits —
  * and each game brings the rest. Roulette's betting window and felt have
  * nothing to say to a slot machine, and a slot machine's reels have nothing
  * to say to roulette.
  * <p>
- * Never persisted. A runtime is rebuilt empty whenever the table's game is
+ * Never persisted. A runtime is rebuilt empty whenever the block's game is
  * set or loaded, for the same reason rounds are never saved.
  */
 public interface TableRuntime {
 
     /** Builds the runtime for whatever the table now hosts. */
-    static TableRuntime forGame(Game game, TableBlockEntity table) {
+    static TableRuntime forGame(Game game, GameBlockEntity table) {
         if (game instanceof RouletteGame roulette) {
             return new RouletteTable(table, roulette);
+        }
+        if (game instanceof SlotsGame slots) {
+            return new SlotCabinet(table, slots);
         }
         return IdleRuntime.INSTANCE;
     }

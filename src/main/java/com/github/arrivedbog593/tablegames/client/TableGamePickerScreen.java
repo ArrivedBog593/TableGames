@@ -12,6 +12,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.util.FormattedCharSequence;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.NotNull;
 
@@ -21,7 +22,9 @@ import java.util.List;
 /**
  * The first step of setting up a table: which game it hosts.
  * <p>
- * One button per registered game, nothing else to decide. Picking one turns
+ * One button per game this player may host here, nothing else to decide:
+ * games against the house are offered only to operators and casino admins,
+ * because they spend the house's money. Picking one turns
  * the table into that game straight away, and the server answers with its
  * settings screen; the table stays closed to players until those are saved.
  * <p>
@@ -53,7 +56,11 @@ public class TableGamePickerScreen extends Screen {
     public TableGamePickerScreen(OpenGamePickerPayload payload) {
         super(Component.translatable("tablegames.picker.title"));
         this.tablePos = payload.tablePos();
-        Games.registry().all().forEach(games::add);
+        // Only what the server offered this player; a game it did not send
+        // is one they would be refused.
+        for (String id : payload.gameIds()) {
+            Games.registry().get(id).ifPresent(games::add);
+        }
     }
 
     public static void open(OpenGamePickerPayload payload) {
@@ -88,8 +95,14 @@ public class TableGamePickerScreen extends Screen {
                 HINT, false);
 
         if (games.isEmpty()) {
-            graphics.drawString(font, Component.translatable("tablegames.picker.none"),
-                    left + PAD, top + LIST_Y + 4, HINT, false);
+            // Wrapped: it explains why the list is empty, which takes a
+            // sentence more than the panel is wide.
+            List<FormattedCharSequence> lines = font.split(
+                    Component.translatable("tablegames.picker.none"), PANEL_W - 2 * PAD);
+            for (int i = 0; i < Math.min(3, lines.size()); i++) {
+                graphics.drawString(font, lines.get(i), left + PAD, top + LIST_Y + i * 10,
+                        HINT, false);
+            }
         }
         for (int i = 0; i < games.size(); i++) {
             Game game = games.get(i);

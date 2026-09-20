@@ -102,6 +102,22 @@ public final class TableAccess {
         return authority || playerId.equals(owner) || trusted.contains(playerId);
     }
 
+    /**
+     * Whether this player may host, or set up, a game of this kind here.
+     * <p>
+     * A game played against the house is the house's money, not the table
+     * owner's: whoever sets its limits, its buy-in or its return decides how
+     * much the bankroll can lose. So only that authority may, even on a table
+     * somebody placed in their own base. A game played between players moves
+     * nothing of the house's, and stays with whoever may configure the table.
+     *
+     * @param authority   as for {@link #mayShare}
+     * @param houseBanked whether the game pays out of the house bankroll
+     */
+    public boolean mayConfigure(UUID playerId, boolean authority, boolean houseBanked) {
+        return houseBanked ? authority : mayConfigure(playerId, authority);
+    }
+
     /** Whether there is nothing here worth writing to disk. */
     public boolean isUnclaimed() {
         return owner == null && trusted.isEmpty();

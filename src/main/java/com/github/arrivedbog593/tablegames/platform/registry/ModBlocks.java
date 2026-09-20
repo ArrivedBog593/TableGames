@@ -3,6 +3,7 @@ package com.github.arrivedbog593.tablegames.platform.registry;
 import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.platform.block.CashierBlock;
 import com.github.arrivedbog593.tablegames.platform.block.ShopBlock;
+import com.github.arrivedbog593.tablegames.platform.block.SlotMachineBlock;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
@@ -65,6 +66,24 @@ public final class ModBlocks {
                     .sound(SoundType.METAL)
                     .requiresCorrectToolForDrops());
 
+
+    /**
+     * A slot machine: one game, one seat, its own cabinet.
+     * <p>
+     * Metal and as hard to break as the cashier, because it holds the same
+     * kind of thing: a machine somebody could carry off is a machine whose
+     * payback somebody else chose.
+     */
+    public static final DeferredBlock<SlotMachineBlock> SLOT_MACHINE = BLOCKS.registerBlock(
+            "slot_machine",
+            SlotMachineBlock::new,
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_RED)
+                    .strength(3.5F, 9.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion()
+                    .requiresCorrectToolForDrops());
+
     private ModBlocks() {
     }
 
@@ -82,5 +101,9 @@ public final class ModBlocks {
 
     public static Block shop() {
         return SHOP.get();
+    }
+
+    public static Block slotMachine() {
+        return SLOT_MACHINE.get();
     }
 }

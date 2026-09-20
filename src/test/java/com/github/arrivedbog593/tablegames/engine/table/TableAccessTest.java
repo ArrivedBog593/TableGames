@@ -34,6 +34,26 @@ class TableAccessTest {
     }
 
     @Test
+    void houseGamesBelongToTheHouseEvenOnSomebodysTable() {
+        TableAccess access = owned();
+        access.trust(GUEST);
+
+        assertFalse(access.mayConfigure(OWNER, ORDINARY, true), "the owner does not set the house's odds");
+        assertFalse(access.mayConfigure(GUEST, ORDINARY, true));
+        assertTrue(access.mayConfigure(STRANGER, OPERATOR, true), "authority reaches any house game");
+    }
+
+    @Test
+    void gamesBetweenPlayersStayWithTheTable() {
+        TableAccess access = owned();
+        access.trust(GUEST);
+
+        assertTrue(access.mayConfigure(OWNER, ORDINARY, false));
+        assertTrue(access.mayConfigure(GUEST, ORDINARY, false));
+        assertFalse(access.mayConfigure(STRANGER, ORDINARY, false));
+    }
+
+    @Test
     void guestsConfigureButDoNotShare() {
         // Sharing the sharing would be an escalation with no way back.
         TableAccess access = owned();

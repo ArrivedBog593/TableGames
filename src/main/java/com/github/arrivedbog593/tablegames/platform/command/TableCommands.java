@@ -55,11 +55,11 @@ public final class TableCommands {
     /** How far to look for a table. Beyond this the player probably means something else. */
     private static final double REACH = 6.0;
 
-    /** Game ids, drawn from the registry so a new game needs no command changes. */
+    /** Ids a table can be set to, so a new table game needs no command changes. */
     private static final SuggestionProvider<CommandSourceStack> GAME_IDS =
             (context, builder) -> {
                 List<String> ids = new ArrayList<>();
-                Games.registry().all().forEach(game -> ids.add(game.id()));
+                Games.tableGames().forEach(game -> ids.add(game.id()));
                 return SharedSuggestionProvider.suggest(ids, builder);
             };
 
@@ -132,13 +132,21 @@ public final class TableCommands {
     private static int setGame(CommandSourceStack source, String gameId)
             throws CommandSyntaxException {
         Optional<Game> game = Games.registry().get(gameId);
-        if (game.isEmpty()) {
+        // A game with a cabinet of its own is not a game a table has, so as
+        // far as this command is concerned there is no such table game.
+        if (game.isEmpty() || !Games.fitsOnATable(game.get())) {
             source.sendFailure(Component.translatable(
                     "tablegames.command.table.no_such_game", gameId));
             return 0;
         }
-        TableBlockEntity table = configurableTable(source);
+        // Replacing a game is emptying the table and hosting another, so it
+        // takes both: whoever may empty it, hosting a game they may host.
+        TableBlockEntity table = clearableTable(source);
         if (table == null) {
+            return 0;
+        }
+        if (!table.mayHost(source.getPlayerOrException(), game.get())) {
+            source.sendFailure(Component.translatable("tablegames.table.house_game_staff_only"));
             return 0;
         }
         table.setGame(game.get());
@@ -151,7 +159,7 @@ public final class TableCommands {
     }
 
     private static int clearGame(CommandSourceStack source) throws CommandSyntaxException {
-        TableBlockEntity table = configurableTable(source);
+        TableBlockEntity table = clearableTable(source);
         if (table == null) {
             return 0;
         }
@@ -331,7 +339,7 @@ public final class TableCommands {
     private static int listGames(CommandSourceStack source) {
         source.sendSuccess(() -> Component.translatable(
                 "tablegames.command.table.games_title").withStyle(ChatFormatting.GOLD), false);
-        for (Game game : Games.registry().all()) {
+        for (Game game : Games.tableGames()) {
             source.sendSuccess(() -> Component.translatable(
                     "tablegames.command.table.games_entry",
                     Component.translatable(game.translationKey()),
@@ -342,7 +350,7 @@ public final class TableCommands {
                             ? "tablegames.table.house_banked"
                             : "tablegames.table.player_versus_player")), false);
         }
-        return Games.registry().size();
+        return Games.tableGames().size();
     }
 
     /**
@@ -499,7 +507,22 @@ public final class TableCommands {
         if (table == null) {
             return null;
         }
-        if (!table.mayConfigure(source.getPlayerOrException())) {
+        Component refusal = table.configureRefusal(source.getPlayerOrException());
+        if (refusal != null) {
+            source.sendFailure(refusal);
+            return null;
+        }
+        return table;
+    }
+
+    /** The table looked at, if the sender may take it back to hosting nothing. */
+    private static TableBlockEntity clearableTable(CommandSourceStack source)
+            throws CommandSyntaxException {
+        TableBlockEntity table = lookedAtTable(source);
+        if (table == null) {
+            return null;
+        }
+        if (!table.mayClear(source.getPlayerOrException())) {
             source.sendFailure(Component.translatable("tablegames.command.table.not_yours"));
             return null;
         }
