@@ -90,21 +90,28 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
      * @param window      what shows, reel by reel and top row first, as
      *                    {@link SlotSymbol} ordinals; empty when idle
      * @param winningLines {@link Payline} ordinals that paid
-     * @param won         what the spin paid, in credits
+     * @param won         what the spin paid
+     * @param prizes      the prize bank: won and not yet gambled again
      * @param freeLines   lines the owed free spin must be played on, zero for none
      * @param freePerLine what that free spin is staked at
      */
     public record SpinView(List<Integer> window, List<Integer> winningLines, long won,
-                           int freeLines, long freePerLine) {
+                           long prizes, int freeLines, long freePerLine) {
 
         public static final StreamCodec<ByteBuf, SpinView> STREAM_CODEC = StreamCodec.composite(
                 ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list(WINDOW_SIZE)), SpinView::window,
                 ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list(Payline.MAX)),
                 SpinView::winningLines,
                 ByteBufCodecs.VAR_LONG, SpinView::won,
+                ByteBufCodecs.VAR_LONG, SpinView::prizes,
                 ByteBufCodecs.VAR_INT, SpinView::freeLines,
                 ByteBufCodecs.VAR_LONG, SpinView::freePerLine,
                 SpinView::new);
+
+        /** Whether there is anything to take out without leaving the machine. */
+        public boolean hasPrizes() {
+            return prizes > 0;
+        }
 
         public boolean hasResult() {
             return window.size() == WINDOW_SIZE;
@@ -145,7 +152,7 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
     public static SlotsStatePayload idle() {
         return new SlotsStatePayload(
                 new MachineView(RoundPhase.IDLE.ordinal(), false, false, 1, 0, ""),
-                new SpinView(List.of(), List.of(), 0, 0, 0),
+                new SpinView(List.of(), List.of(), 0, 0, 0, 0),
                 new PlayerFunds(0, 0, 0, 0, 0, 1));
     }
 
@@ -183,9 +190,16 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
                 && playerId.equals(cabinet.lastSpinner())
                 ? cabinet.lastResult().orElse(null)
                 : null;
+        // Zero while the reels turn, and not merely for tidiness: the bank is
+        // set the moment the handle is pulled, so sending it would put the
+        // win on the meter two seconds before the symbols that explain it.
+        // It is also true — a spin in progress has the whole stack riding on
+        // it and nothing set aside.
+        boolean mine = playerId.equals(cabinet.lastSpinner());
+        long prizes = mine && !cabinet.isRolling() ? cabinet.prizes() : 0;
         SpinView spin = landed == null
-                ? new SpinView(List.of(), List.of(), 0, 0, 0)
-                : new SpinView(flatten(landed), winners(landed), cabinet.lastWin(),
+                ? new SpinView(List.of(), List.of(), 0, prizes, 0, 0)
+                : new SpinView(flatten(landed), winners(landed), cabinet.lastWin(), prizes,
                         cabinet.freeLines(), cabinet.freePerLine());
 
         Optional<BuyIn> buyIn = block.buyIn();

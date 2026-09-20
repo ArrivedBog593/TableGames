@@ -37,12 +37,12 @@ import java.util.random.RandomGenerator;
  * abandon halfway. What the reels do afterwards is an animation the client
  * plays over a result the server already wrote down.
  * <p>
- * That is why the phases here are a lock rather than a round.
+ * That is why the phase here is a lock rather than a round.
  * {@link RoundPhase#LOCKED} while the reels are turning stops a second pull
  * landing before the first one is shown — the credits are already moved, so
  * without it a player could spin faster than the machine could say what
- * happened. {@link RoundPhase#RESULT} holds the win on screen for a moment
- * afterwards.
+ * happened. The rest of the time the machine is idle, whatever is on the
+ * glass.
  * <p>
  * A machine is one seat by definition, so everything here is about one
  * player: whoever is sitting at it.
@@ -76,6 +76,22 @@ public final class SlotCabinet implements TableRuntime {
 
     /** What the last spin paid, so the screen can say so. */
     private long lastWin;
+
+    /**
+     * The prize bank: what has been won and not yet gambled again.
+     * <p>
+     * Not a second pot of money. It is a line drawn through the one stack
+     * the player already has, marking off the part that arrived as winnings
+     * — so credits are always the stack less this. Keeping it as a mark
+     * rather than a balance is what stops the two ever disagreeing.
+     * <p>
+     * The point of it is the pause. Winnings land somewhere they are not at
+     * risk, and taking them out is one button away, but so is putting them
+     * back on the reels: pulling the handle moves the bank into credits
+     * first, because a machine that let you play your winnings without ever
+     * saying so would be hiding the only decision it ever asks you to make.
+     */
+    private long prizes;
 
     /** Whose spin it was, so nobody else is shown it as theirs. */
     private UUID lastSpinner;
@@ -122,6 +138,34 @@ public final class SlotCabinet implements TableRuntime {
 
     public long lastWin() {
         return lastWin;
+    }
+
+    /** What is in the prize bank, in the currency a balance is kept in. */
+    public long prizes() {
+        return prizes;
+    }
+
+    /**
+     * Pays the prize bank out, leaving the player at the machine with
+     * whatever credits they had.
+     * <p>
+     * Refused while the reels are turning, like everything else that moves
+     * money here.
+     *
+     * @return why not, or null when it was paid
+     */
+    public Component collect(ServerPlayer player) {
+        UUID playerId = player.getUUID();
+        if (!playerId.equals(lastSpinner) || prizes <= 0) {
+            return Component.translatable("tablegames.slots.nothing_to_collect");
+        }
+        if (rolling) {
+            return Component.translatable("tablegames.slots.still_spinning");
+        }
+        block.releaseFromStack(playerId, prizes);
+        prizes = 0;
+        block.markDirty();
+        return null;
     }
 
     public UUID lastSpinner() {
@@ -279,6 +323,10 @@ public final class SlotCabinet implements TableRuntime {
         this.free = landed.replay() ? new Free(pull.lines(), pull.perLine()) : null;
         this.lastResult = landed;
         this.lastWin = Math.multiplyExact(pull.perLine(), (long) landed.totalMultiple());
+        // Whatever was in the bank has just been played — the stake came out
+        // of the one stack and the bank was only ever a mark on part of it —
+        // so the bank now holds this spin's winnings and nothing else.
+        this.prizes = lastWin;
         this.lastSpinner = playerId;
         this.ticksLeft = SPIN_TICKS;
         this.rolling = true;
@@ -349,6 +397,7 @@ public final class SlotCabinet implements TableRuntime {
             lastResult = null;
             lastSpinner = null;
             lastWin = 0;
+            prizes = 0;
         }
     }
 
@@ -359,6 +408,7 @@ public final class SlotCabinet implements TableRuntime {
         lastResult = null;
         lastSpinner = null;
         lastWin = 0;
+        prizes = 0;
         free = null;
     }
 

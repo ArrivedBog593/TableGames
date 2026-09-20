@@ -4,6 +4,7 @@ import com.github.arrivedbog593.tablegames.engine.games.slots.Payline;
 import com.github.arrivedbog593.tablegames.engine.games.slots.Reel;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotMachine;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotSymbol;
+import com.github.arrivedbog593.tablegames.platform.network.PlayerFunds;
 import com.github.arrivedbog593.tablegames.platform.network.SlotsActionPayload;
 import com.github.arrivedbog593.tablegames.platform.network.SlotsStatePayload;
 import com.github.arrivedbog593.tablegames.platform.network.TableActionPayload;
@@ -51,7 +52,7 @@ public class SlotMachineScreen extends TableScreen {
      * two credit buttons, each with room to breathe. Guessing it is how the
      * meter ended up printed through the stake row.
      */
-    private static final int PANEL_H = 272;
+    private static final int PANEL_H = 278;
 
     private static final int PAD = 10;
 
@@ -74,6 +75,15 @@ public class SlotMachineScreen extends TableScreen {
     private static final int FREE_TEXT = 0xFF9A6400;
     private static final int REEL_BACK = 0xFF101010;
     private static final int LINE_LIT = 0xFFE0B020;
+
+    /**
+     * One colour per payline, without alpha; how bright a line is drawn is
+     * decided where it is drawn. Distinct enough that two lines crossing the
+     * same cell stay two lines.
+     */
+    private static final int[] LINE_COLOURS = {
+            0x00E0B020, 0x004FA8E8, 0x005ECC5E, 0x00E06AB0, 0x00E88030,
+    };
 
     /** Which item stands for each symbol. */
     private static final Map<SlotSymbol, Item> FACES = new EnumMap<>(SlotSymbol.class);
@@ -102,6 +112,12 @@ public class SlotMachineScreen extends TableScreen {
 
     /** The buy-in prompt, while it is open. Everything under it is covered. */
     private BuyInPrompt prompt;
+
+    /**
+     * Which line button the mouse is over, or -1. Worked out once a frame
+     * because the glass is drawn before the buttons are and has to know.
+     */
+    private int hoveredLine = -1;
 
     public SlotMachineScreen(BlockPos machinePos) {
         super(Component.translatable("tablegames.slots.title"), machinePos, PANEL_W, PANEL_H);
@@ -143,7 +159,12 @@ public class SlotMachineScreen extends TableScreen {
         return spinY() + BUTTON_H + 4;
     }
 
-    /** The credit meter, above the buttons that change it. */
+    /** What the last pull came to, between the lever and the meters. */
+    private int resultY() {
+        return meterY() - 12;
+    }
+
+    /** The two meters, above the buttons that change them. */
     private int meterY() {
         return seatButtonY() - 13;
     }
@@ -217,6 +238,13 @@ public class SlotMachineScreen extends TableScreen {
     public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         SlotsStatePayload state = ClientSlotsState.state();
+
+        hoveredLine = -1;
+        for (int i = 0; prompt == null && i < Payline.MAX; i++) {
+            if (isOver(mouseX, mouseY, lineButtonX(i), lineButtonY(), LINE_BUTTON_W, BUTTON_H)) {
+                hoveredLine = i;
+            }
+        }
 
         drawPanel(graphics, left, top, left + PANEL_W, top + PANEL_H);
         graphics.drawString(font, title, left + PAD, top + PAD, LABEL_TEXT, false);
@@ -296,6 +324,72 @@ public class SlotMachineScreen extends TableScreen {
                     graphics.fill(x, y, x + CELL, y + CELL, 300, 0xC4121212);
                 }
             }
+        }
+        if (!covered) {
+            drawPaylines(graphics, state);
+        }
+    }
+
+    /**
+     * The lines being played, drawn across the glass where they run.
+     * <p>
+     * Without this a player is asked to choose between "3" and "4" with
+     * nothing on screen saying what either one is. The numbers alone are a
+     * private joke between the button and the paytable.
+     * <p>
+     * The lines in play are drawn faintly all the time, and whichever button
+     * the mouse is over is drawn bright — so the way to find out what line
+     * four is, is to point at the four.
+     */
+    private void drawPaylines(GuiGraphics graphics, SlotsStatePayload state) {
+        int chosen = ClientSlotsState.lines();
+        for (int i = 0; i < Payline.MAX; i++) {
+            boolean playing = i < chosen;
+            boolean pointed = i == hoveredLine;
+            if (!playing && !pointed) {
+                continue;
+            }
+            // A line that paid is drawn brightest of all: it is the reason
+            // the player is looking at the glass at all.
+            boolean paid = !state.machine().rolling() && state.spin().hasResult()
+                    && state.spin().paid(Payline.values()[i]);
+            int alpha = pointed || paid ? 0xFF000000 : 0x55000000;
+            drawPayline(graphics, Payline.values()[i], LINE_COLOURS[i] | alpha);
+        }
+    }
+
+    private void drawPayline(GuiGraphics graphics, Payline line, int colour) {
+        int x0 = windowX();
+        int y0 = windowY();
+        int[] xs = new int[SlotMachine.REELS];
+        int[] ys = new int[SlotMachine.REELS];
+        for (int reel = 0; reel < SlotMachine.REELS; reel++) {
+            xs[reel] = x0 + reel * (CELL + CELL_GAP) + CELL / 2;
+            ys[reel] = y0 + line.rowOn(reel) * (CELL + CELL_GAP) + CELL / 2;
+        }
+        // Out to the edges of the glass at both ends, so a line reads as
+        // crossing the window rather than as three dots joined up.
+        segment(graphics, x0 - 2, ys[0], xs[0], ys[0], colour);
+        for (int reel = 0; reel + 1 < SlotMachine.REELS; reel++) {
+            segment(graphics, xs[reel], ys[reel], xs[reel + 1], ys[reel + 1], colour);
+        }
+        segment(graphics, xs[SlotMachine.REELS - 1], ys[SlotMachine.REELS - 1],
+                x0 + WINDOW_W + 2, ys[SlotMachine.REELS - 1], colour);
+    }
+
+    /**
+     * A straight run of pixels from one point to another.
+     * <p>
+     * Drawn above the symbols, because a payline that ran behind them would
+     * be hidden exactly where it matters. There is no line primitive to call
+     * and the runs here are short, so it steps along the longer axis.
+     */
+    private static void segment(GuiGraphics graphics, int x1, int y1, int x2, int y2, int colour) {
+        int steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+        for (int i = 0; i <= steps; i++) {
+            int x = x1 + (x2 - x1) * i / steps;
+            int y = y1 + (y2 - y1) * i / steps;
+            graphics.fill(x, y, x + 1, y + 2, 400, colour);
         }
     }
 
@@ -411,20 +505,28 @@ public class SlotMachineScreen extends TableScreen {
      * and talks in its own unit, the way one on a real floor does.
      */
     private void drawMeter(GuiGraphics graphics, SlotsStatePayload state) {
-        int y = meterY();
-        Component credits = Component.translatable("tablegames.slots.credits",
-                format(state.funds().stackHeld()));
-        graphics.drawString(font, credits, left + PAD, y, LABEL_TEXT, false);
-
         SlotsStatePayload.SpinView spin = state.spin();
+        PlayerFunds funds = state.funds();
+
+        // Credits are what is left to play with, which is the stack less
+        // whatever is parked in the prize bank.
+        long banked = funds.inCredits(spin.prizes());
+        Component credits = Component.translatable("tablegames.slots.credits",
+                format(Math.max(0, funds.stackHeld() - banked)));
+        graphics.drawString(font, credits, left + PAD, meterY(), LABEL_TEXT, false);
+
+        Component prizes = Component.translatable("tablegames.slots.prizes", format(banked));
+        graphics.drawString(font, prizes, left + PANEL_W - PAD - font.width(prizes), meterY(),
+                banked > 0 ? WIN_TEXT : LABEL_TEXT, false);
+
         if (state.machine().rolling() || !spin.hasResult()) {
             return;
         }
-        long won = state.funds().inCredits(spin.won());
+        long won = funds.inCredits(spin.won());
         Component result = won > 0
                 ? Component.translatable("tablegames.slots.won", format(won))
                 : Component.translatable("tablegames.slots.lost");
-        graphics.drawString(font, result, left + PANEL_W - PAD - font.width(result), y,
+        graphics.drawString(font, result, left + (PANEL_W - font.width(result)) / 2, resultY(),
                 won > 0 ? WIN_TEXT : HINT, false);
     }
 
@@ -446,12 +548,20 @@ public class SlotMachineScreen extends TableScreen {
         if (!seated) {
             return;
         }
+        // One button, two meanings, in the order a player wants them: while
+        // there is anything in the prize bank it takes that and leaves them
+        // playing, and only once the bank is empty does it mean "I am done".
+        // Pressing it twice cashes out everything, which is what somebody
+        // walking away will do without being told.
+        boolean banked = state.spin().hasPrizes();
         int outX = left + PANEL_W - PAD - SEAT_BUTTON_W;
-        Component out = Component.translatable("tablegames.slots.cash_out");
+        Component out = Component.translatable(banked
+                ? "tablegames.slots.collect" : "tablegames.slots.cash_out");
         boolean outHovered = isOver(mouseX, mouseY, outX, y, SEAT_BUTTON_W, BUTTON_H);
-        drawButton(graphics, outX, y, SEAT_BUTTON_W, BUTTON_H, PANEL, outHovered);
+        drawButton(graphics, outX, y, SEAT_BUTTON_W, BUTTON_H,
+                banked ? 0xFF2E7D32 : PANEL, outHovered);
         graphics.drawString(font, out, outX + (SEAT_BUTTON_W - font.width(out)) / 2, y + 4,
-                LABEL_TEXT, false);
+                banked ? 0xFFFFFFFF : LABEL_TEXT, false);
     }
 
     // --- Clicking --------------------------------------------------------------------
@@ -504,7 +614,7 @@ public class SlotMachineScreen extends TableScreen {
         }
 
         if (isOver(mx, my, spinX(), spinY(), SPIN_W, BUTTON_H) && canSpin(state)) {
-            PacketDistributor.sendToServer(new SlotsActionPayload(
+            PacketDistributor.sendToServer(SlotsActionPayload.spin(
                     tablePos, ClientSlotsState.lines(), ClientSlotsState.perLine()));
             click();
             return true;
@@ -519,7 +629,12 @@ public class SlotMachineScreen extends TableScreen {
         if (state.isSeated()
                 && isOver(mx, my, left + PANEL_W - PAD - SEAT_BUTTON_W, seatY,
                         SEAT_BUTTON_W, BUTTON_H)) {
-            sendSeatAction(TableActionPayload.KIND_STAND, 0);
+            if (state.spin().hasPrizes()) {
+                PacketDistributor.sendToServer(SlotsActionPayload.collect(tablePos));
+                click();
+            } else {
+                sendSeatAction(TableActionPayload.KIND_STAND, 0);
+            }
             return true;
         }
 

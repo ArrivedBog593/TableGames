@@ -624,6 +624,31 @@ public abstract class GameBlockEntity extends BlockEntity {
         }
     }
 
+    /**
+     * Hands part of a player's stack back without taking their seat.
+     * <p>
+     * Nothing moves in the balance: a stack is a reservation, not custody,
+     * so shrinking it simply frees credits the player already owned to be
+     * spent elsewhere. That is what makes it safe for a game to offer a
+     * partial cash-out — a slot machine paying out its prize bank while the
+     * player stays at the cabinet — without a second path through
+     * settlement that could disagree with the first.
+     *
+     * @param amount how much to release; clamped to what is actually held
+     * @return what was released, which is zero when there was nothing
+     */
+    long releaseFromStack(UUID playerId, long amount) {
+        long held = stacks.stackOf(playerId);
+        long freed = Math.min(Math.max(0L, amount), held);
+        if (freed == 0) {
+            return 0;
+        }
+        stacks.settle(playerId, -freed);
+        publishCommitments();
+        markDirty();
+        return freed;
+    }
+
     /** Lets go of the bankroll and of everybody's credits at once. */
     private void releaseCommitments() {
         OutcomeSettler.releaseExposure(commitmentKey());

@@ -27,12 +27,25 @@ import org.jetbrains.annotations.NotNull;
  * Sitting down, topping up and standing up are not here. They are the same
  * acts at a machine as at a table, and go over {@link TableActionPayload}.
  *
+ * @param kind       {@link #KIND_SPIN} or {@link #KIND_COLLECT}
  * @param machinePos which machine; verified against reach before use
  * @param lines      how many paylines to play, 1 to {@code Payline.MAX}
- * @param perLine    the stake on each line
+ * @param perLine    the stake on each line, in the machine's credits
  */
-public record SlotsActionPayload(BlockPos machinePos, int lines, long perLine)
+public record SlotsActionPayload(int kind, BlockPos machinePos, int lines, long perLine)
         implements CustomPacketPayload {
+
+    /** Pull the handle. */
+    public static final int KIND_SPIN = 0;
+
+    /**
+     * Take the prize bank out and stay at the machine.
+     * <p>
+     * Its own request rather than a flavour of standing up, because it means
+     * the opposite: the player is keeping their seat and their credits, and
+     * only putting the winnings beyond the reach of the next pull.
+     */
+    public static final int KIND_COLLECT = 1;
 
     /**
      * How far a player may be from a machine and still pull it. Generous
@@ -45,10 +58,19 @@ public record SlotsActionPayload(BlockPos machinePos, int lines, long perLine)
 
     public static final StreamCodec<RegistryFriendlyByteBuf, SlotsActionPayload> STREAM_CODEC =
             StreamCodec.composite(
+                    ByteBufCodecs.VAR_INT, SlotsActionPayload::kind,
                     BlockPos.STREAM_CODEC, SlotsActionPayload::machinePos,
                     ByteBufCodecs.VAR_INT, SlotsActionPayload::lines,
                     ByteBufCodecs.VAR_LONG, SlotsActionPayload::perLine,
                     SlotsActionPayload::new);
+
+    public static SlotsActionPayload spin(BlockPos pos, int lines, long perLine) {
+        return new SlotsActionPayload(KIND_SPIN, pos, lines, perLine);
+    }
+
+    public static SlotsActionPayload collect(BlockPos pos) {
+        return new SlotsActionPayload(KIND_COLLECT, pos, 1, 0);
+    }
 
     @Override
     public @NotNull Type<? extends CustomPacketPayload> type() {
@@ -78,7 +100,11 @@ public record SlotsActionPayload(BlockPos machinePos, int lines, long perLine)
                 return;
             }
 
-            Component refusal = cabinet.spin(player, payload.lines(), payload.perLine());
+            Component refusal = switch (payload.kind()) {
+                case KIND_SPIN -> cabinet.spin(player, payload.lines(), payload.perLine());
+                case KIND_COLLECT -> cabinet.collect(player);
+                default -> null;
+            };
             if (refusal != null) {
                 player.sendSystemMessage(refusal.copy().withStyle(ChatFormatting.RED));
                 return;
