@@ -17,6 +17,18 @@ public final class ClientSlotsState {
     private static long rollStartedAt;
 
     /**
+     * When the server last said they had stopped, which is not when they
+     * stop on screen.
+     * <p>
+     * The landing symbols arrive in the same breath as the word that the
+     * spin is over, and a drum that was at full speed one frame and parked
+     * the next does not read as a drum. So the screen keeps turning for a
+     * moment after this, slowing each reel onto what it landed on. Zero
+     * while they are turning, and while they never have on this client.
+     */
+    private static long rollStoppedAt;
+
+    /**
      * What the player last pulled for, so the machine offers the same again.
      * <p>
      * Kept here rather than in the screen, which is thrown away and rebuilt
@@ -36,10 +48,16 @@ public final class ClientSlotsState {
         // once a tick at best, which is too coarse to spin anything smoothly,
         // and the animation is cosmetic: the spin was settled before the
         // first frame of it was drawn.
-        if (payload.machine().rolling() && !state.machine().rolling()) {
+        boolean was = state.machine().rolling();
+        boolean turning = payload.machine().rolling();
+        if (turning && !was) {
             rollStartedAt = System.currentTimeMillis();
-        } else if (!payload.machine().rolling()) {
-            rollStartedAt = 0;
+            rollStoppedAt = 0;
+        } else if (was && !turning) {
+            // Left standing rather than cleared: the screen still has a reel
+            // or two to bring down, and it measures where they are from the
+            // moment they started.
+            rollStoppedAt = System.currentTimeMillis();
         }
         state = payload;
     }
@@ -52,9 +70,21 @@ public final class ClientSlotsState {
         return state.isSeated();
     }
 
-    /** Milliseconds since the reels started, or -1 when they are still. */
+    /** Milliseconds since the reels started, or -1 when they never have. */
     public static long sinceRollStarted() {
         return rollStartedAt == 0 ? -1 : System.currentTimeMillis() - rollStartedAt;
+    }
+
+    /**
+     * Milliseconds since the server said the reels had stopped, or -1 while
+     * they are turning and for a player who arrived after they had.
+     * <p>
+     * The second case is why this is not derived from the payload: somebody
+     * who opens a cabinet showing last week's result should see it sitting
+     * there, not watch it land.
+     */
+    public static long sinceRollStopped() {
+        return rollStoppedAt == 0 ? -1 : System.currentTimeMillis() - rollStoppedAt;
     }
 
     /** How many lines the player has selected. */

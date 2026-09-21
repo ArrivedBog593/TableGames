@@ -5,6 +5,7 @@ import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Optional;
@@ -60,5 +61,39 @@ public class SlotMachineBlockEntity extends GameBlockEntity {
     public static void serverTick(Level level, BlockPos pos, BlockState state,
                                   SlotMachineBlockEntity machine) {
         machine.tick();
+        machine.showReels(level, pos, state);
+    }
+
+    /**
+     * Puts on the outside of the cabinet what the player sees on the screen:
+     * reels that turn while a spin is running and stand still when it is
+     * over.
+     * <p>
+     * Only ever a mirror of {@link SlotCabinet#isRolling()}, and only ever
+     * the fact that something is turning — never what it landed on. The
+     * result is already settled when the reels start, so a spectator who
+     * reads the block reads nothing the screen would not have told them, and
+     * nothing the player does not know first.
+     * <p>
+     * Both halves carry the flag because a block state cannot be read from
+     * the block next door. The upper half is the one with the reel glass on
+     * it; the lower one is set to keep the pair from disagreeing when the
+     * chunk reloads.
+     */
+    private void showReels(Level level, BlockPos pos, BlockState state) {
+        boolean rolling = reels().map(SlotCabinet::isRolling).orElse(false);
+        if (state.getValue(SlotMachineBlock.SPINNING) == rolling) {
+            return;
+        }
+        // Clients only: neighbors have nothing to say about the reels, and
+        // waking them every time a spin starts would be a lot of noise for
+        // a texture swap.
+        level.setBlock(pos, state.setValue(SlotMachineBlock.SPINNING, rolling), Block.UPDATE_CLIENTS);
+        BlockPos above = pos.above();
+        BlockState reelGlass = level.getBlockState(above);
+        if (reelGlass.is(state.getBlock())) {
+            level.setBlock(above, reelGlass.setValue(SlotMachineBlock.SPINNING, rolling),
+                    Block.UPDATE_CLIENTS);
+        }
     }
 }

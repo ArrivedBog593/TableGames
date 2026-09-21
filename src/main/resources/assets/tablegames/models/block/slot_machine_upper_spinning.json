@@ -1,0 +1,6 @@
+{
+  "parent": "tablegames:block/slot_machine_upper",
+  "textures": {
+    "reels": "tablegames:block/slot_machine_reels_spin"
+  }
+}

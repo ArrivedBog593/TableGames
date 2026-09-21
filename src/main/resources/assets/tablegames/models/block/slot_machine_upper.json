@@ -1,0 +1,88 @@
+{
+  "ambientocclusion": false,
+  "textures": {
+    "bezel": "tablegames:block/slot_machine_bezel",
+    "body_side": "tablegames:block/slot_machine_body_side",
+    "reels": "tablegames:block/slot_machine_reels",
+    "deck": "tablegames:block/slot_machine_deck",
+    "trim": "tablegames:block/slot_machine_trim",
+    "marquee": "tablegames:block/slot_machine_marquee",
+    "counter": "tablegames:block/slot_machine_counter",
+    "particle": "tablegames:block/slot_machine_particle"
+  },
+  "elements": [
+    {
+      "__comment": "body",
+      "from": [2, 0, 3],
+      "to": [14, 13, 14],
+      "faces": {
+        "north": { "uv": [2, 1, 14, 14], "texture": "#bezel" },
+        "south": { "uv": [2, 1, 14, 14], "texture": "#body_side" },
+        "east": { "uv": [3, 1, 14, 14], "texture": "#body_side" },
+        "west": { "uv": [3, 1, 14, 14], "texture": "#body_side" }
+      }
+    },
+    {
+      "__comment": "reel glass",
+      "from": [3, 3, 2],
+      "to": [13, 11, 3],
+      "faces": {
+        "north": { "uv": [0, 0, 10, 8], "texture": "#reels" },
+        "east": { "uv": [10, 0, 11, 8], "texture": "#reels" },
+        "west": { "uv": [10, 0, 11, 8], "texture": "#reels" },
+        "up": { "uv": [0, 8, 10, 9], "texture": "#reels" },
+        "down": { "uv": [0, 8, 10, 9], "texture": "#reels" }
+      }
+    },
+    {
+      "__comment": "button deck",
+      "from": [2, 1, 0.5],
+      "to": [14, 3, 3.5],
+      "rotation": { "angle": -22.5, "axis": "x", "origin": [8, 3, 3.5] },
+      "faces": {
+        "north": { "uv": [2, 3, 14, 5], "texture": "#deck" },
+        "east": { "uv": [2, 5, 5, 7], "texture": "#deck" },
+        "west": { "uv": [2, 5, 5, 7], "texture": "#deck" },
+        "up": { "uv": [2, 0, 14, 3], "texture": "#deck" },
+        "down": { "uv": [2, 7, 14, 10], "texture": "#deck" }
+      }
+    },
+    {
+      "__comment": "left rail",
+      "from": [1, 0, 2],
+      "to": [2, 13, 5],
+      "faces": {
+        "north": { "uv": [3, 0, 4, 13], "texture": "#trim" },
+        "south": { "uv": [4, 0, 5, 13], "texture": "#trim" },
+        "west": { "uv": [0, 0, 3, 13], "texture": "#trim" },
+        "up": { "uv": [5, 0, 6, 3], "texture": "#trim" },
+        "down": { "uv": [5, 0, 6, 3], "texture": "#trim" }
+      }
+    },
+    {
+      "__comment": "right rail",
+      "from": [14, 0, 2],
+      "to": [15, 13, 5],
+      "faces": {
+        "north": { "uv": [3, 0, 4, 13], "texture": "#trim" },
+        "south": { "uv": [4, 0, 5, 13], "texture": "#trim" },
+        "east": { "uv": [0, 0, 3, 13], "texture": "#trim" },
+        "up": { "uv": [5, 0, 6, 3], "texture": "#trim" },
+        "down": { "uv": [5, 0, 6, 3], "texture": "#trim" }
+      }
+    },
+    {
+      "__comment": "marquee",
+      "from": [1, 13, 2],
+      "to": [15, 16, 15],
+      "faces": {
+        "north": { "uv": [1, 0, 15, 3], "texture": "#marquee" },
+        "south": { "uv": [1, 3, 15, 6], "texture": "#marquee" },
+        "east": { "uv": [2, 6, 15, 9], "texture": "#marquee" },
+        "west": { "uv": [2, 6, 15, 9], "texture": "#marquee" },
+        "up": { "uv": [1, 2, 15, 15], "texture": "#counter" },
+        "down": { "uv": [1, 2, 15, 15], "texture": "#counter" }
+      }
+    }
+  ]
+}

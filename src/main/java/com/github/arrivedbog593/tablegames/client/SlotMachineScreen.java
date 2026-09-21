@@ -21,6 +21,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.Map;
 
@@ -44,7 +45,10 @@ import java.util.Map;
  * <p>
  * The reels are animated off a local clock. While the server says they are
  * turning it has not sent what they landed on, so what scrolls past is the
- * client's own noise; the real symbols arrive when they stop.
+ * client's own noise; the real symbols arrive when they stop. They arrive
+ * all at once, which is why the glass keeps moving for a moment afterwards:
+ * each drum is slowed onto its own result in turn, left to right, and until
+ * the last one is down nothing else on the panel admits what happened.
  */
 public class SlotMachineScreen extends TableScreen {
 
@@ -84,11 +88,11 @@ public class SlotMachineScreen extends TableScreen {
     private static final int LINE_LIT = 0xFFE0B020;
 
     /**
-     * One colour per payline, without alpha; how bright a line is drawn is
+     * One color per payline, without alpha; how bright a line is drawn is
      * decided where it is drawn. Distinct enough that two lines crossing the
      * same cell stay two lines.
      */
-    private static final int[] LINE_COLOURS = {
+    private static final int[] LINE_COLORS = {
             0x00E0B020, 0x004FA8E8, 0x005ECC5E, 0x00E06AB0, 0x00E88030,
     };
 
@@ -131,15 +135,55 @@ public class SlotMachineScreen extends TableScreen {
         FACES.put(SlotSymbol.REPLAY, Items.CLOCK);
     }
 
+    /** How far the drum moves from one symbol to the next: a cell and its gap. */
+    private static final int PITCH = CELL + CELL_GAP;
+
     /**
-     * How long one symbol stays in place on each reel while it turns.
+     * How long one symbol takes to pass on each reel.
      * <p>
      * Three different rates, so the drums read as three separate things
      * rather than one picture being shuffled. What scrolls past has no
      * relation to what will land, and could not have: the landing symbols
      * are not on this client until the reels stop.
      */
-    private static final long[] STEP_MILLIS = {70, 85, 100};
+    private static final long[] STEP_MILLIS = {80, 95, 110};
+
+    /**
+     * How long a reel takes to come up to speed from standing.
+     * <p>
+     * Long enough to watch. A quarter of a second is a cut, not a pull: the
+     * drum is at its top speed before the eye has found it, and the whole
+     * spin then reads as one constant blur with a stop bolted on each end.
+     * At this length the rise is its own part of the animation, and a third
+     * of the time the server holds the spin for.
+     */
+    private static final long SPIN_UP_MILLIS = 700;
+
+    /** The wait between one reel beginning to slow and the next beginning to. */
+    private static final long STOP_STAGGER_MILLIS = 120;
+
+    /**
+     * How many symbols a reel spends slowing down.
+     * <p>
+     * The knob that decides whether the stop reads as a stop. Distance, not
+     * time, because time is what falls out of it: a reel sheds a fixed number
+     * of symbols at constant deceleration, so the slower drums take longer to
+     * do it, exactly as a heavier one would. Five is enough that the last
+     * symbol alone takes about half the slowdown, which is the part the
+     * eye actually reads as coasting.
+     */
+    private static final int SETTLE_SYMBOLS = 5;
+
+    /**
+     * How long the glass keeps moving after the server says the spin is over.
+     * <p>
+     * The worst case rather than a figure of its own, because each reel works
+     * out its own slowing from how far it has to go: the last one to start is
+     * also the slowest, and the furthest it can be asked to travel is one
+     * symbol more than {@link #SETTLE_SYMBOLS}.
+     */
+    private static final long LANDING_MILLIS = STOP_STAGGER_MILLIS * (SlotMachine.REELS - 1)
+            + 2L * (SETTLE_SYMBOLS + 1) * Arrays.stream(STEP_MILLIS).max().orElse(0L);
 
     /** The buy-in prompt, while it is open. Everything under it is covered. */
     private BuyInPrompt prompt;
@@ -323,20 +367,99 @@ public class SlotMachineScreen extends TableScreen {
         graphics.fill(x0 - 3, y0 - 3, x0 + WINDOW_W + 3, y0 + WINDOW_H + 3, OUTLINE);
         graphics.fill(x0 - 2, y0 - 2, x0 + WINDOW_W + 2, y0 + WINDOW_H + 2, REEL_BACK);
 
-        boolean rolling = state.machine().rolling();
         SlotsStatePayload.SpinView spin = state.spin();
-        SlotSymbol[] all = SlotSymbol.values();
-        boolean asleep = !rolling && !spin.hasResult();
+        boolean asleep = !state.machine().rolling() && !spin.hasResult();
         // A rendered item ignores anything drawn flat over it afterwards, so
         // while the prompt is up the symbols are not drawn at all rather than
         // drawn and covered. They showed through the prompt otherwise.
         boolean covered = prompt != null;
 
+        if (reelsMoving(state)) {
+            drawTurningReels(graphics, x0, y0, spin, covered);
+        } else {
+            drawRestingReels(graphics, x0, y0, spin, asleep, covered);
+        }
+        if (!covered) {
+            drawPaylines(graphics, state);
+        }
+    }
+
+    /**
+     * Whether the glass is still moving — either the server says so, or it
+     * has just stopped saying so and a reel has yet to come down.
+     * <p>
+     * Everything that would give the result away asks this rather than the
+     * packet: the win on the meter, the lit cells, the lever. A machine that
+     * announced the money while its drums were still turning would be a
+     * machine whose reels nobody ever watched again.
+     */
+    private boolean reelsMoving(SlotsStatePayload state) {
+        if (state.machine().rolling()) {
+            return true;
+        }
+        long stopped = ClientSlotsState.sinceRollStopped();
+        return state.spin().hasResult() && stopped >= 0 && stopped < LANDING_MILLIS;
+    }
+
+    /** Where a reel is this frame, and where its result sits on the drum. */
+    private record ReelAt(double scroll, int resultAt) {
+
+        /** No result on this drum yet: everything on it is the client's noise. */
+        static final int NOWHERE = Integer.MIN_VALUE;
+    }
+
+    /**
+     * The drums, turning.
+     * <p>
+     * One tall strip per reel rather than three cells, because a symbol
+     * halfway between two rows has to be drawn halfway between two rows.
+     * The window clips it and the cabinet's frame is painted back over the
+     * top afterwards, so what shows through is a drum behind a bezel instead
+     * of three pictures being swapped.
+     */
+    private void drawTurningReels(GuiGraphics graphics, int x0, int y0,
+                                  SlotsStatePayload.SpinView spin, boolean covered) {
+        for (int reel = 0; reel < SlotMachine.REELS; reel++) {
+            int x = x0 + reel * PITCH;
+            graphics.fill(x, y0, x + CELL, y0 + WINDOW_H, 0xFF1B1B1B);
+        }
+        if (covered) {
+            return;
+        }
+
+        long stopped = ClientSlotsState.sinceRollStopped();
+        graphics.enableScissor(x0, y0, x0 + WINDOW_W, y0 + WINDOW_H);
+        for (int reel = 0; reel < SlotMachine.REELS; reel++) {
+            int x = x0 + reel * PITCH;
+            ReelAt at = positionOf(reel, stopped);
+            int whole = (int) Math.floor(at.scroll() / PITCH);
+            int within = (int) Math.round(at.scroll() - (double) whole * PITCH);
+            // One slot above the window as well, so a symbol is already on
+            // its way in rather than appearing at the top edge.
+            for (int slot = -1; slot < Reel.ROWS; slot++) {
+                SlotSymbol symbol = stripSymbol(reel, slot - whole, at.resultAt(), spin);
+                drawSymbol(graphics, symbol, x, y0 + slot * PITCH + within);
+            }
+        }
+        graphics.disableScissor();
+
+        // The bars between the rows, over the symbols. A rendered item
+        // ignores anything drawn flat after it unless it is given a depth,
+        // which is why these take the z the plain overloads do not.
+        for (int row = 1; row < Reel.ROWS; row++) {
+            int y = y0 + row * PITCH - CELL_GAP;
+            graphics.fill(x0, y, x0 + WINDOW_W, y + CELL_GAP, 300, REEL_BACK);
+        }
+    }
+
+    /** The drums, stopped: what they landed on, or a dark cabinet. */
+    private void drawRestingReels(GuiGraphics graphics, int x0, int y0,
+                                  SlotsStatePayload.SpinView spin, boolean asleep, boolean covered) {
         for (int reel = 0; reel < SlotMachine.REELS; reel++) {
             for (int row = 0; row < Reel.ROWS; row++) {
-                int x = x0 + reel * (CELL + CELL_GAP);
-                int y = y0 + row * (CELL + CELL_GAP);
-                boolean lit = !rolling && spin.hasResult() && onWinningLine(spin, reel, row);
+                int x = x0 + reel * PITCH;
+                int y = y0 + row * PITCH;
+                boolean lit = !asleep && onWinningLine(spin, reel, row);
                 graphics.fill(x, y, x + CELL, y + CELL, lit ? 0xFF2A2410 : 0xFF1B1B1B);
                 if (lit) {
                     graphics.renderOutline(x, y, CELL, CELL, LINE_LIT);
@@ -344,12 +467,9 @@ public class SlotMachineScreen extends TableScreen {
                 if (covered) {
                     continue;
                 }
-
-                SlotSymbol symbol = rolling || asleep
-                        ? scrolling(all, reel, row)
-                        : spin.symbolAt(reel, row);
-                ItemStack icon = new ItemStack(FACES.getOrDefault(symbol, Items.COAL));
-                graphics.renderItem(icon, x + (CELL - 16) / 2, y + (CELL - 16) / 2);
+                drawSymbol(graphics, asleep
+                        ? stripSymbol(reel, row, ReelAt.NOWHERE, spin)
+                        : spin.symbolAt(reel, row), x, y);
                 if (asleep) {
                     // Above the item's own depth, which is why this takes the
                     // z the flat overloads do not.
@@ -357,9 +477,11 @@ public class SlotMachineScreen extends TableScreen {
                 }
             }
         }
-        if (!covered) {
-            drawPaylines(graphics, state);
-        }
+    }
+
+    private void drawSymbol(GuiGraphics graphics, SlotSymbol symbol, int x, int y) {
+        ItemStack icon = new ItemStack(FACES.getOrDefault(symbol, Items.COAL));
+        graphics.renderItem(icon, x + (CELL - 16) / 2, y + (CELL - 16) / 2);
     }
 
     /**
@@ -386,11 +508,11 @@ public class SlotMachineScreen extends TableScreen {
             boolean paid = !state.machine().rolling() && state.spin().hasResult()
                     && state.spin().paid(Payline.values()[i]);
             int alpha = pointed || paid ? 0xFF000000 : 0x55000000;
-            drawPayline(graphics, Payline.values()[i], LINE_COLOURS[i] | alpha);
+            drawPayline(graphics, Payline.values()[i], LINE_COLORS[i] | alpha);
         }
     }
 
-    private void drawPayline(GuiGraphics graphics, Payline line, int colour) {
+    private void drawPayline(GuiGraphics graphics, Payline line, int color) {
         int x0 = windowX();
         int y0 = windowY();
         int[] xs = new int[SlotMachine.REELS];
@@ -401,12 +523,12 @@ public class SlotMachineScreen extends TableScreen {
         }
         // Out to the edges of the glass at both ends, so a line reads as
         // crossing the window rather than as three dots joined up.
-        segment(graphics, x0 - 2, ys[0], xs[0], ys[0], colour);
+        segment(graphics, x0 - 2, ys[0], xs[0], ys[0], color);
         for (int reel = 0; reel + 1 < SlotMachine.REELS; reel++) {
-            segment(graphics, xs[reel], ys[reel], xs[reel + 1], ys[reel + 1], colour);
+            segment(graphics, xs[reel], ys[reel], xs[reel + 1], ys[reel + 1], color);
         }
         segment(graphics, xs[SlotMachine.REELS - 1], ys[SlotMachine.REELS - 1],
-                x0 + WINDOW_W + 2, ys[SlotMachine.REELS - 1], colour);
+                x0 + WINDOW_W + 2, ys[SlotMachine.REELS - 1], color);
     }
 
     /**
@@ -416,12 +538,12 @@ public class SlotMachineScreen extends TableScreen {
      * be hidden exactly where it matters. There is no line primitive to call
      * and the runs here are short, so it steps along the longer axis.
      */
-    private static void segment(GuiGraphics graphics, int x1, int y1, int x2, int y2, int colour) {
+    private static void segment(GuiGraphics graphics, int x1, int y1, int x2, int y2, int color) {
         int steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
         for (int i = 0; i <= steps; i++) {
             int x = x1 + (x2 - x1) * i / steps;
             int y = y1 + (y2 - y1) * i / steps;
-            graphics.fill(x, y, x + 1, y + 2, 400, colour);
+            graphics.fill(x, y, x + 1, y + 2, 400, color);
         }
     }
 
@@ -497,22 +619,123 @@ public class SlotMachineScreen extends TableScreen {
         return SlotsGame.Payback.P95.paytable();
     }
 
+    /** The speed a reel cruises at once it is up to it, in pixels per millisecond. */
+    private static double cruiseOf(int reel) {
+        return PITCH / (double) STEP_MILLIS[reel % STEP_MILLIS.length];
+    }
+
     /**
-     * What a turning reel shows at this row, right now.
+     * How fast a reel is turning this many milliseconds into its pull.
      * <p>
-     * The three rows of one reel are consecutive symbols, and the whole
-     * column steps along as time passes, so what the player sees is a strip
-     * scrolling rather than three cells being randomised independently.
-     * Each reel steps at its own rate and starts somewhere else along the
-     * strip, which is what stops them moving as one block.
+     * A smoothstep up to the cruise rather than a straight ramp. Constant
+     * acceleration reaches full speed and then stops accelerating in the same
+     * instant, and that corner is visible — the drum arrives at its top speed
+     * with a flick. This leaves standing gently and settles onto the cruise
+     * gently, because it is flat at both ends.
      */
-    private static SlotSymbol scrolling(SlotSymbol[] all, int reel, int row) {
-        long since = Math.max(0, ClientSlotsState.sinceRollStarted());
-        long step = since / STEP_MILLIS[reel % STEP_MILLIS.length];
-        // The offset per reel is prime to the symbol count, so the three
-        // never line up into an accidental win nobody was paid for.
-        long index = step + row + (long) reel * 5;
-        return all[(int) Math.floorMod(index, all.length)];
+    private static double speedAt(int reel, long millis) {
+        if (millis <= 0) {
+            return 0;
+        }
+        double cruise = cruiseOf(reel);
+        if (millis >= SPIN_UP_MILLIS) {
+            return cruise;
+        }
+        double u = millis / (double) SPIN_UP_MILLIS;
+        return cruise * u * u * (3 - 2 * u);
+    }
+
+    /**
+     * How far a reel has turned, in pixels, this many milliseconds in.
+     * <p>
+     * The integral of {@link #speedAt}. The smoothstep covers half of what
+     * the cruise would have in the same time, which is what lets the second
+     * line stay the plain one: past the ramp the drum is simply cruising,
+     * half a ramp behind where it would be had it never had to start.
+     */
+    private static double traveled(int reel, long millis) {
+        if (millis <= 0) {
+            return 0;
+        }
+        double cruise = cruiseOf(reel);
+        if (millis < SPIN_UP_MILLIS) {
+            double u = millis / (double) SPIN_UP_MILLIS;
+            return cruise * SPIN_UP_MILLIS * u * u * u * (1 - u / 2.0);
+        }
+        return cruise * (millis - SPIN_UP_MILLIS / 2.0);
+    }
+
+    /**
+     * Where one reel is, and what it is coming to rest on.
+     * <p>
+     * Worked out from the two clocks every frame rather than stepped along,
+     * so nothing has to be remembered between frames and a dropped frame
+     * costs nothing. While the reel is still turning there is no result on
+     * its drum to find.
+     * <p>
+     * Once it begins to slow it is given somewhere to stop — the next whole
+     * symbol {@link #SETTLE_SYMBOLS} further on — and it coasts there under
+     * **constant deceleration**, which is the whole of why this reads as a
+     * reel winding down rather than a reel being switched off.
+     * <p>
+     * Constant deceleration is the one curve that leaves the cruise at
+     * exactly the speed the drum was already turning and arrives at exactly
+     * zero. Anything eased more sharply has to start the slowdown *faster*
+     * than the spin to cover the same ground in the same time, and a drum
+     * that speeds up before it stops does not look like it is stopping at
+     * all. The cost is that the duration stops being ours to pick: it falls
+     * out of the distance and the speed, so a slower drum takes longer.
+     */
+    private static ReelAt positionOf(int reel, long stopped) {
+        long spinning = Math.max(0, ClientSlotsState.sinceRollStarted());
+        long settling = stopped < 0 ? -1 : stopped - STOP_STAGGER_MILLIS * reel;
+        if (settling <= 0) {
+            return new ReelAt(traveled(reel, spinning), ReelAt.NOWHERE);
+        }
+
+        double from = traveled(reel, spinning - settling);
+        int restingAt = (int) Math.floor(from / PITCH) + SETTLE_SYMBOLS + 1;
+        double to = (double) restingAt * PITCH;
+
+        // From v to nothing at a steady rate covers v·t/2, so the time this
+        // reel needs is twice the distance over the speed it is leaving at.
+        // Read off the ramp rather than assumed to be the cruise: a spin
+        // short enough that a reel is told to stop before it got up to speed
+        // would otherwise be handed a slowdown that starts faster than it was
+        // going, which is the very thing this curve exists to avoid.
+        double entry = speedAt(reel, spinning - settling);
+        double budget = LANDING_MILLIS - STOP_STAGGER_MILLIS * reel;
+        double slowing = Math.min(budget, 2.0 * (to - from) / entry);
+        double progress = Math.min(1.0, settling / slowing);
+        double eased = 1 - (1 - progress) * (1 - progress);
+        return new ReelAt(from + (to - from) * eased, -restingAt);
+    }
+
+    /**
+     * What sits at one place on a reel's drum.
+     * <p>
+     * A fixed hash of the reel and the place rather than the symbol list
+     * read in order, so the drum is the same drum each time round instead of
+     * a ladder climbing through coal, iron, gold. None of what it returns
+     * means anything while the reel is turning: this client has not been
+     * told what the spin landed on, which is the point of withholding it.
+     * <p>
+     * From the moment a reel starts slowing, the three places it is coming
+     * to rest on hold the real result — so the symbols the player watches
+     * drop into the window are the ones that stay in it.
+     */
+    private static SlotSymbol stripSymbol(int reel, int at, int resultAt,
+                                          SlotsStatePayload.SpinView spin) {
+        if (resultAt != ReelAt.NOWHERE) {
+            int row = at - resultAt;
+            if (row >= 0 && row < Reel.ROWS) {
+                return spin.symbolAt(reel, row);
+            }
+        }
+        SlotSymbol[] all = SlotSymbol.values();
+        int mixed = reel * 0x9E3779B9 + at * 0x85EBCA6B;
+        mixed ^= mixed >>> 15;
+        return all[Math.floorMod(mixed, all.length)];
     }
 
     private boolean onWinningLine(SlotsStatePayload.SpinView spin, int reel, int row) {
@@ -615,8 +838,13 @@ public class SlotMachineScreen extends TableScreen {
         // Read off the cabinet, not out of the viewer's pocket: these are the
         // numbers on the front of the machine, and somebody watching over a
         // player's shoulder can see them in a real casino too.
+        // The server stops withholding the winnings the moment it stops
+        // saying the reels turn, which is a few hundred milliseconds before
+        // they stop turning here. Held back the rest of the way, so the
+        // meter does not call the result over the top of the drums.
+        boolean moving = reelsMoving(state);
         long onMeter = funds.inCredits(state.machine().seat().credits());
-        long banked = funds.inCredits(spin.prizes());
+        long banked = moving ? 0 : funds.inCredits(spin.prizes());
         Component credits = Component.translatable("tablegames.slots.credits",
                 format(Math.max(0, onMeter - banked)));
         graphics.drawString(font, credits, left + PAD, meterY(), LABEL_TEXT, false);
@@ -625,7 +853,7 @@ public class SlotMachineScreen extends TableScreen {
         graphics.drawString(font, prizes, left + PANEL_W - PAD - font.width(prizes), meterY(),
                 banked > 0 ? WIN_TEXT : LABEL_TEXT, false);
 
-        if (state.machine().rolling() || !spin.hasResult()) {
+        if (moving || !spin.hasResult()) {
             return;
         }
         long won = funds.inCredits(spin.won());
@@ -780,7 +1008,12 @@ public class SlotMachineScreen extends TableScreen {
      * up for a pull that is certain to come back refused.
      */
     private boolean canSpin(SlotsStatePayload state) {
-        if (!state.isSeated() || state.machine().roundPhase().isCountingDown()) {
+        // Dead while the glass is still coming down as well as while the
+        // server is turning it. The pull would be legal — the spin is over —
+        // but it would cut the landing short, and a lever that takes money
+        // for a result the player never saw is the wrong kind of fast.
+        if (!state.isSeated() || state.machine().roundPhase().isCountingDown()
+                || reelsMoving(state)) {
             return false;
         }
         return state.spin().owesAFreeSpin() || spinCost() <= state.funds().stackHeld();

@@ -20,15 +20,22 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
+import net.minecraft.world.level.block.LevelEvent;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
@@ -62,14 +69,48 @@ public class SlotMachineBlock extends BaseEntityBlock implements GameBlock {
     public static final EnumProperty<Direction> FACING = HorizontalDirectionalBlock.FACING;
 
     /**
-     * A cabinet, not a cube: narrower than the block it stands in, and the
-     * full height of it.
+     * Which of the two blocks a cabinet stands in this one is.
+     * <p>
+     * A slot machine is not furniture you look down on; it is something you
+     * stand in front of. One block tall put the reels at a player's knees,
+     * which is why the upper half exists: the cabinet and its tray sit in
+     * the lower block, and the reel glass, the button deck and the marquee
+     * sit at eye level in the one above.
+     * <p>
+     * Only the lower half is real. It holds the block entity, the ticker and
+     * the drop; the upper half is scenery that is kept honest by
+     * {@link #canSurvive} and forwards every click downwards.
      */
-    private static final VoxelShape SHAPE = Block.box(2.0, 0.0, 2.0, 14.0, 16.0, 14.0);
+    public static final EnumProperty<DoubleBlockHalf> HALF = BlockStateProperties.DOUBLE_BLOCK_HALF;
+
+    /**
+     * Whether the reels on the outside of the cabinet are turning.
+     * <p>
+     * The result of a spin is settled the instant the lever is pulled, so
+     * this says nothing about the outcome and cannot be read for one. It is
+     * the same thing the screen shows the player, shown to everybody else in
+     * the room: a machine somebody is playing looks different from one
+     * nobody is, which is most of what a casino floor is made of.
+     */
+    public static final BooleanProperty SPINNING = BooleanProperty.create("spinning");
+
+    /**
+     * A cabinet, not a cube: inset from the block it stands in, and the full
+     * height of both halves.
+     */
+    private static final VoxelShape SHAPE = Block.box(1.0, 0.0, 1.0, 15.0, 16.0, 15.0);
 
     public SlotMachineBlock(Properties properties) {
         super(properties);
-        registerDefaultState(getStateDefinition().any().setValue(FACING, Direction.NORTH));
+        registerDefaultState(getStateDefinition().any()
+                .setValue(FACING, Direction.NORTH)
+                .setValue(HALF, DoubleBlockHalf.LOWER)
+                .setValue(SPINNING, false));
+    }
+
+    /** The half that owns the machine: itself, or the one underneath it. */
+    public static BlockPos cabinetOf(BlockState state, BlockPos pos) {
+        return state.getValue(HALF) == DoubleBlockHalf.UPPER ? pos.below() : pos;
     }
 
     @Override
@@ -79,13 +120,82 @@ public class SlotMachineBlock extends BaseEntityBlock implements GameBlock {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.@NotNull Builder<Block, BlockState> builder) {
-        builder.add(FACING);
+        builder.add(FACING, HALF, SPINNING);
+    }
+
+    /**
+     * Refuses the placement outright when the cabinet has no headroom.
+     * <p>
+     * Returning null rather than dropping a half-height machine: a cabinet
+     * with its reels missing is a machine nobody can read, and the player
+     * keeps the item instead of losing it to a ceiling they forgot about.
+     */
+    @Nullable
+    @Override
+    public BlockState getStateForPlacement(BlockPlaceContext context) {
+        BlockPos pos = context.getClickedPos();
+        Level level = context.getLevel();
+        if (pos.getY() >= level.getMaxBuildHeight() - 1
+                || !level.getBlockState(pos.above()).canBeReplaced(context)) {
+            return null;
+        }
+        return defaultBlockState()
+                .setValue(FACING, context.getHorizontalDirection().getOpposite())
+                .setValue(HALF, DoubleBlockHalf.LOWER);
+    }
+
+    /**
+     * The upper half only ever stands on its own lower half.
+     * <p>
+     * That is the whole rule, and it is what makes breaking either half take
+     * the other with it: {@link #updateShape} turns an orphan into air, and
+     * air over the cabinet does the same downwards.
+     */
+    @Override
+    protected boolean canSurvive(BlockState state, @NotNull LevelReader level, @NotNull BlockPos pos) {
+        if (state.getValue(HALF) == DoubleBlockHalf.UPPER) {
+            BlockState below = level.getBlockState(pos.below());
+            return below.is(this) && below.getValue(HALF) == DoubleBlockHalf.LOWER;
+        }
+        return super.canSurvive(state, level, pos);
     }
 
     @Override
-    public BlockState getStateForPlacement(BlockPlaceContext context) {
-        return defaultBlockState()
-                .setValue(FACING, context.getHorizontalDirection().getOpposite());
+    protected @NotNull BlockState updateShape(BlockState state, @NotNull Direction direction,
+                                              @NotNull BlockState neighbor, @NotNull LevelAccessor level,
+                                              @NotNull BlockPos pos, @NotNull BlockPos neighborPos) {
+        DoubleBlockHalf half = state.getValue(HALF);
+        boolean towardsTheOtherHalf = direction.getAxis() == Direction.Axis.Y
+                && (half == DoubleBlockHalf.LOWER) == (direction == Direction.UP);
+        if (towardsTheOtherHalf) {
+            return neighbor.is(this) && neighbor.getValue(HALF) != half
+                    ? state
+                    : Blocks.AIR.defaultBlockState();
+        }
+        return super.updateShape(state, direction, neighbor, level, pos, neighborPos);
+    }
+
+    /**
+     * Stops a creative player who broke the reels from being handed a second
+     * machine by the half still standing.
+     * <p>
+     * Survival needs none of this: the drop is the lower half's, and the
+     * loot table asks which half it is before it gives anything.
+     */
+    @Override
+    public @NotNull BlockState playerWillDestroy(@NotNull Level level, @NotNull BlockPos pos,
+                                                 @NotNull BlockState state, @NotNull Player player) {
+        if (!level.isClientSide && player.isCreative()
+                && state.getValue(HALF) == DoubleBlockHalf.UPPER) {
+            BlockPos cabinet = pos.below();
+            BlockState below = level.getBlockState(cabinet);
+            if (below.is(state.getBlock()) && below.getValue(HALF) == DoubleBlockHalf.LOWER) {
+                level.setBlock(cabinet, Blocks.AIR.defaultBlockState(),
+                        Block.UPDATE_SUPPRESS_DROPS | Block.UPDATE_ALL);
+                level.levelEvent(player, LevelEvent.PARTICLES_DESTROY_BLOCK, cabinet, Block.getId(below));
+            }
+        }
+        return super.playerWillDestroy(level, pos, state, player);
     }
 
     @Override
@@ -99,9 +209,13 @@ public class SlotMachineBlock extends BaseEntityBlock implements GameBlock {
         return RenderShape.MODEL;
     }
 
+    /** The machine lives in the lower half; the upper one is a facade. */
+    @Nullable
     @Override
     public BlockEntity newBlockEntity(@NotNull BlockPos pos, @NotNull BlockState state) {
-        return new SlotMachineBlockEntity(pos, state);
+        return state.getValue(HALF) == DoubleBlockHalf.LOWER
+                ? new SlotMachineBlockEntity(pos, state)
+                : null;
     }
 
     /**
@@ -116,6 +230,9 @@ public class SlotMachineBlock extends BaseEntityBlock implements GameBlock {
     public void setPlacedBy(@NotNull Level level, @NotNull BlockPos pos, @NotNull BlockState state,
                             @Nullable LivingEntity placer, @NotNull ItemStack stack) {
         super.setPlacedBy(level, pos, state, placer, stack);
+        // The reels and the marquee: put down by the same act that put down
+        // the cabinet, so a player never has to stack one on the other.
+        level.setBlock(pos.above(), state.setValue(HALF, DoubleBlockHalf.UPPER), Block.UPDATE_ALL);
         if (level.isClientSide || !(placer instanceof Player player)) {
             return;
         }
@@ -129,7 +246,7 @@ public class SlotMachineBlock extends BaseEntityBlock implements GameBlock {
     @Override
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
             Level level, @NotNull BlockState state, @NotNull BlockEntityType<T> type) {
-        if (level.isClientSide) {
+        if (level.isClientSide || state.getValue(HALF) != DoubleBlockHalf.LOWER) {
             return null;
         }
         return createTickerHelper(type, ModBlockEntities.SLOT_MACHINE.get(),
@@ -155,7 +272,7 @@ public class SlotMachineBlock extends BaseEntityBlock implements GameBlock {
         if (level.isClientSide) {
             return ItemInteractionResult.SUCCESS;
         }
-        if (!(level.getBlockEntity(pos) instanceof SlotMachineBlockEntity machine)
+        if (!(level.getBlockEntity(cabinetOf(state, pos)) instanceof SlotMachineBlockEntity machine)
                 || !(player instanceof ServerPlayer serverPlayer)) {
             return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
         }
@@ -184,7 +301,10 @@ public class SlotMachineBlock extends BaseEntityBlock implements GameBlock {
         if (level.isClientSide) {
             return InteractionResult.SUCCESS;
         }
-        if (!(level.getBlockEntity(pos) instanceof SlotMachineBlockEntity machine)
+        // A click on the reels is a click on the machine: the upper half has
+        // nothing of its own to open.
+        BlockPos cabinet = cabinetOf(state, pos);
+        if (!(level.getBlockEntity(cabinet) instanceof SlotMachineBlockEntity machine)
                 || !(player instanceof ServerPlayer serverPlayer)) {
             return InteractionResult.PASS;
         }
@@ -210,7 +330,7 @@ public class SlotMachineBlock extends BaseEntityBlock implements GameBlock {
             PacketDistributor.sendToPlayer(serverPlayer, snapshot);
         }
         PacketDistributor.sendToPlayer(serverPlayer,
-                new OpenTableScreenPayload(machine.game().orElseThrow().id(), pos));
+                new OpenTableScreenPayload(machine.game().orElseThrow().id(), cabinet));
         return InteractionResult.CONSUME;
     }
 

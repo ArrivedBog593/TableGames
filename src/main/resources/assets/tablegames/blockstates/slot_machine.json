@@ -1,8 +1,20 @@
 {
   "variants": {
-    "facing=north": { "model": "tablegames:block/slot_machine" },
-    "facing=east":  { "model": "tablegames:block/slot_machine", "y": 90 },
-    "facing=south": { "model": "tablegames:block/slot_machine", "y": 180 },
-    "facing=west":  { "model": "tablegames:block/slot_machine", "y": 270 }
+    "half=lower,facing=north,spinning=false": { "model": "tablegames:block/slot_machine_lower" },
+    "half=lower,facing=east,spinning=false": { "model": "tablegames:block/slot_machine_lower", "y": 90 },
+    "half=lower,facing=south,spinning=false": { "model": "tablegames:block/slot_machine_lower", "y": 180 },
+    "half=lower,facing=west,spinning=false": { "model": "tablegames:block/slot_machine_lower", "y": 270 },
+    "half=lower,facing=north,spinning=true": { "model": "tablegames:block/slot_machine_lower" },
+    "half=lower,facing=east,spinning=true": { "model": "tablegames:block/slot_machine_lower", "y": 90 },
+    "half=lower,facing=south,spinning=true": { "model": "tablegames:block/slot_machine_lower", "y": 180 },
+    "half=lower,facing=west,spinning=true": { "model": "tablegames:block/slot_machine_lower", "y": 270 },
+    "half=upper,facing=north,spinning=false": { "model": "tablegames:block/slot_machine_upper" },
+    "half=upper,facing=east,spinning=false": { "model": "tablegames:block/slot_machine_upper", "y": 90 },
+    "half=upper,facing=south,spinning=false": { "model": "tablegames:block/slot_machine_upper", "y": 180 },
+    "half=upper,facing=west,spinning=false": { "model": "tablegames:block/slot_machine_upper", "y": 270 },
+    "half=upper,facing=north,spinning=true": { "model": "tablegames:block/slot_machine_upper_spinning" },
+    "half=upper,facing=east,spinning=true": { "model": "tablegames:block/slot_machine_upper_spinning", "y": 90 },
+    "half=upper,facing=south,spinning=true": { "model": "tablegames:block/slot_machine_upper_spinning", "y": 180 },
+    "half=upper,facing=west,spinning=true": { "model": "tablegames:block/slot_machine_upper_spinning", "y": 270 }
   }
 }
