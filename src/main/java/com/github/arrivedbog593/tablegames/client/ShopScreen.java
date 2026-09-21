@@ -375,7 +375,7 @@ public class ShopScreen extends AbstractContainerScreen<ShopMenu> {
 
         // Two numbers when part of the balance is spoken for, and the
         // spendable one first: that is the figure the prices below are being
-        // compared against, and the one that explains a greyed row.
+        // compared against, and the one that explains a grayed row.
         Component balance = menu.committed() > 0
                 ? Component.translatable("tablegames.shop.balance_committed",
                 format(menu.spendable()), format(menu.balance()))
@@ -499,7 +499,7 @@ public class ShopScreen extends AbstractContainerScreen<ShopMenu> {
         boolean editing = cartSelected != NO_SELECTION;
         boolean hasPick = editing || entryByNumber(selected) != null;
 
-        // The stepper. Greyed as a set when nothing is picked, because a
+        // The stepper. Grayed as a set when nothing is picked, because a
         // quantity with no subject is a control that cannot do anything.
         int minusX = leftPos + CART_X;
         int plusX = leftPos + CART_X + CART_W - STEP_W;
@@ -641,7 +641,7 @@ public class ShopScreen extends AbstractContainerScreen<ShopMenu> {
                 hovered ? face + 0x00191919 : face);
     }
 
-    /** A labeled button, greyed out when it would do nothing. */
+    /** A labeled button, grayed out when it would do nothing. */
     private void drawButton(GuiGraphics graphics, int x, int y,
                             Component label, boolean enabled, boolean hovered, int face) {
         drawControl(graphics, x, y, ShopScreen.CART_W, Panels.OUTLINE,
@@ -795,7 +795,7 @@ public class ShopScreen extends AbstractContainerScreen<ShopMenu> {
                 return true;
             }
             lines.add(Component.translatable("tablegames.cart.buy"));
-            // Why it is greyed, rather than leaving the player to guess. A
+            // Why it is grayed, rather than leaving the player to guess. A
             // disabled button with no explanation is the same as a broken one.
             long total = cartTotal();
             if (pendingSince != 0) {

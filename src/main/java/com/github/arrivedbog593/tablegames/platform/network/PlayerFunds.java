@@ -23,7 +23,7 @@ import java.util.Optional;
  *
  * @param balance   the viewer's credits, never anybody else's
  * @param elsewhere what of that balance is riding on other blocks, so the
- *                  screen can grey out a stake this one would refuse.
+ *                  screen can gray out a stake this one would refuse.
  *                  Without it, a player with credits committed across the
  *                  room sees every chip lit and finds out by clicking.
  *                  What they have staked <em>here</em> is not in it: the

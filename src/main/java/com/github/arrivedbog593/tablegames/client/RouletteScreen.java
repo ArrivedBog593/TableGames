@@ -491,7 +491,7 @@ public class RouletteScreen extends TableScreen {
         //
         // Otherwise the second half appears only when another table is
         // holding some of it. A player who cannot see why their chips are
-        // greyed out here would have no way of finding the table holding them.
+        // grayed out here would have no way of finding the table holding them.
         // Held at what it was until the strip stops. The number is withheld
         // below for exactly this reason, and letting the chips move in the
         // meantime would give the same answer away in a different corner of
@@ -565,7 +565,7 @@ public class RouletteScreen extends TableScreen {
                         spot.x() + spot.w() - 2, spot.y() + 5, WINNER);
             }
             if (stakedByOthers(state, spot) > 0) {
-                // The other side of the spot, and a cooler colour, so a felt
+                // The other side of the spot, and a cooler color, so a felt
                 // with chips from four players still reads at a glance as
                 // "mine there, theirs here". Without it a spectator watched a
                 // table where nobody appeared to be betting at all, and a
@@ -585,7 +585,7 @@ public class RouletteScreen extends TableScreen {
         long pending = pendingAmount();
         for (int i = 0; i < CHIPS.length; i++) {
             int x = left + 8 + i * (CHIP_W + 2);
-            // Greys out once adding this chip would put the stack in hand
+            // Grays out once adding this chip would put the stack in hand
             // past what is placeable, not when the denomination alone would —
             // a chip that still fits on top of what is already built up stays
             // usable, and one that would not is refused before the click that

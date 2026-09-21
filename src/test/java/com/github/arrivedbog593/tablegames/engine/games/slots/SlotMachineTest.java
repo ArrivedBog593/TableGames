@@ -18,13 +18,13 @@ class SlotMachineTest {
 
     /** Every level pays what its label says, whichever number of lines is played. */
     @Test
-    void eachPaybackReturnsWhatItIsLabelledWith() {
+    void eachPaybackReturnsWhatItIsLabeledWith() {
         for (SlotsGame.Payback level : SlotsGame.Payback.values()) {
             SlotMachine machine = new SlotMachine(GAME.reels(), level.paytable());
-            double labelled = Integer.parseInt(level.percent()) / 100.0;
+            double labeled = Integer.parseInt(level.percent()) / 100.0;
             for (int lines = 1; lines <= Payline.MAX; lines++) {
                 double actual = machine.returnToPlayer(lines);
-                assertTrue(Math.abs(actual - labelled) < 0.003,
+                assertTrue(Math.abs(actual - labeled) < 0.003,
                         level + " on " + lines + " lines returns " + actual);
             }
         }

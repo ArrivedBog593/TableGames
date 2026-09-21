@@ -180,7 +180,7 @@ class GameSessionTest {
     }
 
     @Test
-    void cancellingRefundsEveryWager() {
+    void cancelingRefundsEveryWager() {
         TestSession session = newSession();
         session.begin();
         session.cancel("tablegames.summary.canceled");
@@ -192,7 +192,7 @@ class GameSessionTest {
         }
     }
 
-    /** Antes unevenly, so cancelling has to split a pot that does not divide evenly. */
+    /** Antes unevenly, so canceling has to split a pot that does not divide evenly. */
     private static final class UnevenAnteSession extends GameSession {
 
         UnevenAnteSession(List<Seat> seats, RandomGenerator random) {
@@ -223,13 +223,13 @@ class GameSessionTest {
     }
 
     @Test
-    void cancellingAnUnevenPotLosesNothingToTruncation() {
+    void cancelingAnUnevenPotLosesNothingToTruncation() {
         UnevenAnteSession session = new UnevenAnteSession(List.of(
                 Seat.forPlayer(0, ALICE, 100),
                 Seat.forPlayer(1, BOB, 100),
                 Seat.forPlayer(2, CAROL, 100)), new Random(7L));
         session.begin();
-        assertEquals(4, session.pot(), "the antes were already swept before cancelling");
+        assertEquals(4, session.pot(), "the antes were already swept before canceling");
 
         session.cancel("tablegames.summary.canceled");
 

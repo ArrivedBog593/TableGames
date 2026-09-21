@@ -21,13 +21,13 @@ import java.util.random.RandomGenerator;
  * The reels never change. What a table chooses is how generous the machine
  * is, from a short list of paytables whose returns are counted exactly by
  * {@link SlotMachine#returnToPlayer}; the tests pin each one to the figure it
- * is labelled with. Real machines are set the same way: the same reels,
+ * is labeled with. Real machines are set the same way: the same reels,
  * a different card on the glass.
  */
 public final class SlotsGame implements Game {
 
     /**
-     * The paytables a machine may run, and the return each one is labelled
+     * The paytables a machine may run, and the return each one is labeled
      * with, loosest last.
      * <p>
      * Worked out from the 95 card rather than each on its own, so the ladder
@@ -78,7 +78,7 @@ public final class SlotsGame implements Game {
             this.paytable = new Paytable(threes, TWO_COAL);
         }
 
-        /** The return this level is labelled with, in whole percent. */
+        /** The return this level is labeled with, in whole percent. */
         public String percent() {
             return percent;
         }

@@ -15,7 +15,7 @@ import java.util.UUID;
  * could bet everything, wait for betting to lock, buy an item at the cashier
  * with the same credits, and watch the spin drop a wager they could no longer
  * cover. They neither won nor lost it: a cancellation, during the one phase
- * that exists to make cancelling impossible, paid for with an item they could
+ * that exists to make canceling impossible, paid for with an item they could
  * sell straight back.
  * <p>
  * This is the missing subtraction. A table reports what a player has on its

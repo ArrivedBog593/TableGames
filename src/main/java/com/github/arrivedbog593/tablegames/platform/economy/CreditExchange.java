@@ -313,7 +313,7 @@ public final class CreditExchange {
 
         // Spendable, not balance. A wager is not debited when it is placed,
         // so the balance still counts credits that a spin is waiting on.
-        // Buying items with them was a way of cancelling a wager after
+        // Buying items with them was a way of canceling a wager after
         // betting had closed, since the round then dropped a stake it could
         // no longer cover.
         long balance = storage.balanceOf(player.getUUID());

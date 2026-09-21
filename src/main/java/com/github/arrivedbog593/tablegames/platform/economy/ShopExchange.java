@@ -192,7 +192,7 @@ public final class ShopExchange {
 
         // Spendable, not balance. Wagers are not debited when they are
         // placed, so the balance still counts credits that are already riding
-        // on a spin. Selling against those was a way of cancelling a wager
+        // on a spin. Selling against those was a way of canceling a wager
         // after betting had closed: buy an item with the same credits, watch
         // the round, drop a stake it could no longer cover, sell the item
         // back.
@@ -282,7 +282,7 @@ public final class ShopExchange {
 
         // Spendable, not balance. Wagers are not debited when they are
         // placed, so the balance still counts credits that are already riding
-        // on a spin. Selling against those was a way of cancelling a wager
+        // on a spin. Selling against those was a way of canceling a wager
         // after betting had closed: buy an item with the same credits, watch
         // the round, drop a stake it could no longer cover, sell the item
         // back.
