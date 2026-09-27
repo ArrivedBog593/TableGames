@@ -116,4 +116,28 @@ class HouseExposureTest {
         assertThrows(IllegalArgumentException.class, () -> exposure.commit("a", -1));
         assertThrows(IllegalArgumentException.class, () -> exposure.fits("a", -1, CEILING));
     }
+
+    /** What a table may still take is the ceiling less the others, never less than nothing. */
+    @Test
+    void headroomIsTheCeilingLessWhatTheOtherTablesHold() {
+        HouseExposure exposure = new HouseExposure();
+        assertEquals(CEILING, exposure.headroom("a", CEILING));
+        exposure.commit("b", 20_000);
+        assertEquals(30_000, exposure.headroom("a", CEILING));
+        // A table's own commitment is replaced, not added to, so it does not count against it.
+        exposure.commit("a", 10_000);
+        assertEquals(30_000, exposure.headroom("a", CEILING));
+        exposure.commit("c", 40_000);
+        assertEquals(0, exposure.headroom("a", CEILING));
+    }
+
+    /** Whatever headroom says fits does fit, and a credit more does not. */
+    @Test
+    void headroomAgreesWithFits() {
+        HouseExposure exposure = new HouseExposure();
+        exposure.commit("b", 12_345);
+        long room = exposure.headroom("a", CEILING);
+        assertTrue(exposure.fits("a", room, CEILING));
+        assertFalse(exposure.fits("a", room + 1, CEILING));
+    }
 }

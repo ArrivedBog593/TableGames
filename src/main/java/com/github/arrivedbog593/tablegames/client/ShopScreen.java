@@ -909,6 +909,8 @@ public class ShopScreen extends AbstractContainerScreen<ShopMenu> {
         }
         if (isOver(x, y, rememberButtonX(), topPos + SEARCH_Y, REMEMBER_W, SEARCH_H)) {
             ScreenPreferences.setRememberSearch(!ScreenPreferences.rememberSearch());
+            // Turning it on keeps what is typed now, not only what is typed next.
+            ScreenPreferences.setShopSearch(search == null ? "" : search.getValue());
             playClick();
             return true;
         }

@@ -97,18 +97,44 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
      * @param betMinimum the least a line may be played for
      * @param betMaximum the most, zero when only the bankroll decides
      * @param payback    the return this machine is set to, in whole percent
+     * @param houseCaps  the most a line may be played for before the house
+     *                   could not cover it, in credits, for one line up to
+     *                   every line; {@link Long#MAX_VALUE} where the house
+     *                   sets no limit. Public, like the rest of the house's
+     *                   limits: it is what the table would take from anybody.
      */
     public record MachineView(int phase, boolean rolling, CabinetSeat seat,
-                              long betMinimum, long betMaximum, String payback) {
+                              long betMinimum, long betMaximum, String payback,
+                              List<Long> houseCaps) {
 
-        public static final StreamCodec<ByteBuf, MachineView> STREAM_CODEC = StreamCodec.composite(
-                ByteBufCodecs.VAR_INT, MachineView::phase,
-                ByteBufCodecs.BOOL, MachineView::rolling,
-                CabinetSeat.STREAM_CODEC, MachineView::seat,
-                ByteBufCodecs.VAR_LONG, MachineView::betMinimum,
-                ByteBufCodecs.VAR_LONG, MachineView::betMaximum,
-                ByteBufCodecs.STRING_UTF8, MachineView::payback,
-                MachineView::new);
+        private static final StreamCodec<ByteBuf, List<Long>> CAPS_CODEC =
+                ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list(Payline.MAX));
+
+        /** Written by hand: seven fields is one more than the composite codecs take. */
+        public static final StreamCodec<ByteBuf, MachineView> STREAM_CODEC = StreamCodec.of(
+                (buf, view) -> {
+                    ByteBufCodecs.VAR_INT.encode(buf, view.phase());
+                    ByteBufCodecs.BOOL.encode(buf, view.rolling());
+                    CabinetSeat.STREAM_CODEC.encode(buf, view.seat());
+                    ByteBufCodecs.VAR_LONG.encode(buf, view.betMinimum());
+                    ByteBufCodecs.VAR_LONG.encode(buf, view.betMaximum());
+                    ByteBufCodecs.STRING_UTF8.encode(buf, view.payback());
+                    CAPS_CODEC.encode(buf, view.houseCaps());
+                },
+                buf -> new MachineView(
+                        ByteBufCodecs.VAR_INT.decode(buf),
+                        ByteBufCodecs.BOOL.decode(buf),
+                        CabinetSeat.STREAM_CODEC.decode(buf),
+                        ByteBufCodecs.VAR_LONG.decode(buf),
+                        ByteBufCodecs.VAR_LONG.decode(buf),
+                        ByteBufCodecs.STRING_UTF8.decode(buf),
+                        CAPS_CODEC.decode(buf)));
+
+        /** The most a line may be played for on this many lines, as far as the house goes. */
+        public long houseCap(int lines) {
+            int index = lines - 1;
+            return index >= 0 && index < houseCaps.size() ? houseCaps.get(index) : Long.MAX_VALUE;
+        }
 
         public RoundPhase roundPhase() {
             RoundPhase[] all = RoundPhase.values();
@@ -186,7 +212,7 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
     /** A machine doing nothing, for a screen that has not heard from one yet. */
     public static SlotsStatePayload idle() {
         return new SlotsStatePayload(
-                new MachineView(RoundPhase.IDLE.ordinal(), false, CabinetSeat.EMPTY, 1, 0, ""),
+                new MachineView(RoundPhase.IDLE.ordinal(), false, CabinetSeat.EMPTY, 1, 0, "", List.of()),
                 new SpinView(List.of(), List.of(), 0, 0, 0, 0),
                 new PlayerFunds(0, 0, 0, 0, 0, 1));
     }
@@ -235,7 +261,8 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
                 seatOf(server, block, playerId, hidden),
                 block.settings().get(game.betMinimum()),
                 block.settings().get(game.betMaximum()),
-                game.paybackFrom(block.settings()).percent());
+                game.paybackFrom(block.settings()).percent(),
+                houseCapsOf(server, cabinet));
 
         // Withheld while the reels are turning, and not only for show: a
         // client holding the landing symbols early is a client that can be
@@ -284,6 +311,15 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
         String name = playing == null ? "?" : playing.getGameProfile().getName();
         return new CabinetSeat(name, occupant.equals(viewer),
                 Math.max(0, block.stackOf(occupant) - hidden));
+    }
+
+    /** The house's limit per line for every number of lines the machine offers. */
+    private static List<Long> houseCapsOf(MinecraftServer server, SlotCabinet cabinet) {
+        List<Long> caps = new ArrayList<>(Payline.MAX);
+        for (int lines = 1; lines <= Payline.MAX; lines++) {
+            caps.add(cabinet.houseCapPerLine(server, lines));
+        }
+        return caps;
     }
 
     private static List<Integer> flatten(SlotMachine.SpinResult result) {

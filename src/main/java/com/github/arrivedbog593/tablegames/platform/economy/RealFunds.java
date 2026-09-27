@@ -50,6 +50,15 @@ public enum RealFunds implements TableFunds {
     }
 
     @Override
+    public long exposureHeadroom(MinecraftServer server, Game game, String tableKey) {
+        if (!game.isHouseBanked()) {
+            return Long.MAX_VALUE;
+        }
+        return OutcomeSettler.exposure().headroom(tableKey,
+                CreditStorage.get(server).bankroll(server).maximumExposure());
+    }
+
+    @Override
     public void commitExposure(String tableKey, long worstCase) {
         OutcomeSettler.commitExposure(tableKey, worstCase);
     }

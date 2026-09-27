@@ -43,6 +43,15 @@ public interface TableFunds {
     /** Whether a table may take on this much worst-case liability. */
     boolean withinExposure(MinecraftServer server, Game game, String tableKey, long worstCase);
 
+    /**
+     * The largest worst-case liability this table could take on right now,
+     * or {@link Long#MAX_VALUE} for a game that does not play the house.
+     * The same limit {@link #withinExposure} checks, asked as a figure, so a
+     * game can offer a player the most it would accept instead of refusing
+     * what they offered.
+     */
+    long exposureHeadroom(MinecraftServer server, Game game, String tableKey);
+
     /** Records what a table now stands to lose. */
     void commitExposure(String tableKey, long worstCase);
 

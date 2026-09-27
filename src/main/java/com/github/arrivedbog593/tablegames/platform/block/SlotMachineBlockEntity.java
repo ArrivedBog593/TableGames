@@ -54,6 +54,23 @@ public class SlotMachineBlockEntity extends GameBlockEntity {
      */
     private SlotFanfare heard = SlotFanfare.NONE;
 
+    /** The block event that says the reels started (1) or were told to stop (0). */
+    private static final int EVENT_REELS = 1;
+
+    /**
+     * How long the outside keeps turning once the server has stopped the
+     * spin: the screen's own landing, rounded up to whole ticks, so the
+     * glass on the block comes to rest with the last drum on the screen and
+     * not a second and a half before it.
+     */
+    private static final int LANDING_TICKS = (int) Math.ceil(ReelMotion.LANDING_MILLIS / 50.0);
+
+    /** Server side: whether the cabinet was turning last tick. */
+    private boolean wasRolling;
+
+    /** Server side: ticks of landing still to show after a spin stopped. */
+    private int landingLeft;
+
     public SlotMachineBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.SLOT_MACHINE.get(), pos, state);
         // A table builds its round when a game is chosen for it, and a
@@ -117,25 +134,39 @@ public class SlotMachineBlockEntity extends GameBlockEntity {
      * it; the lower one is set to keep the pair from disagreeing when the
      * chunk reloads.
      * <p>
-     * The same update carries the fanfare. Changing the lower half's state
-     * sends its block entity along with it, and {@link #getUpdateTag} only
-     * has one to send once the spin is over — so the room learns what to
-     * cheer for in the same breath as it learns the reels have stopped, and
-     * not a tick sooner.
+     * The glass keeps turning for {@link #LANDING_TICKS} after the spin is
+     * over, because that is how long the screen takes to bring its drums
+     * down. Which is why the flag is only the picture: the start and the stop
+     * the sounds are timed from go out as block events at the moment they
+     * happen, and the fanfare with the stop — {@link #getUpdateTag} only has
+     * one to send once the spin is over, so the room learns what to cheer
+     * for in the same breath as it learns the reels are stopping, and not a
+     * tick sooner.
      */
     private void showReels(Level level, BlockPos pos, BlockState state) {
         boolean rolling = reels().map(SlotCabinet::isRolling).orElse(false);
-        if (state.getValue(SlotMachineBlock.SPINNING) == rolling) {
+        if (rolling != wasRolling) {
+            wasRolling = rolling;
+            if (!rolling) {
+                landingLeft = LANDING_TICKS;
+                level.sendBlockUpdated(pos, state, state, Block.UPDATE_CLIENTS);
+            }
+            level.blockEvent(pos, state.getBlock(), EVENT_REELS, rolling ? 1 : 0);
+        } else if (landingLeft > 0) {
+            landingLeft--;
+        }
+        boolean turning = rolling || landingLeft > 0;
+        if (state.getValue(SlotMachineBlock.SPINNING) == turning) {
             return;
         }
         // Clients only: neighbors have nothing to say about the reels, and
         // waking them every time a spin starts would be a lot of noise for
         // a texture swap.
-        level.setBlock(pos, state.setValue(SlotMachineBlock.SPINNING, rolling), Block.UPDATE_CLIENTS);
+        level.setBlock(pos, state.setValue(SlotMachineBlock.SPINNING, turning), Block.UPDATE_CLIENTS);
         BlockPos above = pos.above();
         BlockState reelGlass = level.getBlockState(above);
         if (reelGlass.is(state.getBlock())) {
-            level.setBlock(above, reelGlass.setValue(SlotMachineBlock.SPINNING, rolling),
+            level.setBlock(above, reelGlass.setValue(SlotMachineBlock.SPINNING, turning),
                     Block.UPDATE_CLIENTS);
         }
     }
@@ -189,19 +220,19 @@ public class SlotMachineBlockEntity extends GameBlockEntity {
     /**
      * Tells the client's sounds when the reels start and stop.
      * <p>
-     * Here rather than in a ticker because this is the exact moment the new
-     * state is applied — a ticker would notice up to a tick later, and the
-     * landings it times would come down a tick away from the ones on the
-     * glass.
+     * A block event rather than the block state, because the state is held
+     * on through the landing and the sounds have to know when the landing
+     * began. True on the server too, which is what sends it to the clients.
      */
     @Override
-    public void setBlockState(@NotNull BlockState state) {
-        boolean was = getBlockState().getValue(SlotMachineBlock.SPINNING);
-        super.setBlockState(state);
-        boolean turning = state.getValue(SlotMachineBlock.SPINNING);
-        if (level != null && level.isClientSide && was != turning) {
-            listener.reelsTurned(this, turning);
+    public boolean triggerEvent(int id, int param) {
+        if (id != EVENT_REELS) {
+            return super.triggerEvent(id, param);
         }
+        if (level != null && level.isClientSide) {
+            listener.reelsTurned(this, param == 1);
+        }
+        return true;
     }
 
     @Override

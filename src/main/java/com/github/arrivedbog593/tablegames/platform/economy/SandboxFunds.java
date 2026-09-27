@@ -81,6 +81,14 @@ public final class SandboxFunds implements TableFunds {
     }
 
     @Override
+    public long exposureHeadroom(MinecraftServer server, Game game, String tableKey) {
+        if (!game.isHouseBanked()) {
+            return Long.MAX_VALUE;
+        }
+        return ledger.exposure().headroom(tableKey, bankroll(server).maximumExposure());
+    }
+
+    @Override
     public void commitExposure(String tableKey, long worstCase) {
         ledger.exposure().commit(tableKey, worstCase);
     }

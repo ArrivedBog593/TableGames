@@ -105,10 +105,22 @@ public final class ClientSlotsState {
      * should not be offered their old stake as if it were legal here.
      */
     public static long perLine() {
+        return Math.clamp(perLine, state.machine().betMinimum(), ceiling());
+    }
+
+    /**
+     * The most a line may be staked at on the lines chosen now: the machine's
+     * own maximum, or what the house can still cover, whichever is lower.
+     * Never below the minimum, so a house that cannot cover even that leaves
+     * the stake at the minimum and the server says why when the lever is
+     * pulled, rather than the screen offering a stake the machine does not take.
+     */
+    public static long ceiling() {
         long minimum = state.machine().betMinimum();
         long maximum = state.machine().betMaximum();
-        long chosen = Math.max(perLine, minimum);
-        return maximum > 0 ? Math.min(chosen, maximum) : chosen;
+        long ceiling = Math.min(maximum > 0 ? maximum : Long.MAX_VALUE,
+                state.machine().houseCap(lines()));
+        return Math.max(minimum, ceiling);
     }
 
     public static void setPerLine(long chosen) {

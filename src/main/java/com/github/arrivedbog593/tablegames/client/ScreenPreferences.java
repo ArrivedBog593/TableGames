@@ -22,8 +22,16 @@ public final class ScreenPreferences {
     private ScreenPreferences() {
     }
 
+    /**
+     * Whether searches survive closing the screen. One switch for the shop
+     * and the cashier alike: a player who turned it off in one has said how
+     * they like search boxes, not how they like that one.
+     */
     private static boolean rememberSearch = true;
     private static String lastShopSearch = "";
+
+    /** The cashier's own query, apart from the shop's: two lists of different things. */
+    private static String lastCashierSearch = "";
 
     /**
      * The arrangement, always remembered.
@@ -104,6 +112,7 @@ public final class ScreenPreferences {
             // the kind of thing that comes back when somebody turns it on
             // again and finds a word they typed an hour ago.
             lastShopSearch = "";
+            lastCashierSearch = "";
         }
     }
 
@@ -115,6 +124,17 @@ public final class ScreenPreferences {
     public static void setShopSearch(String query) {
         if (rememberSearch) {
             lastShopSearch = query == null ? "" : query;
+        }
+    }
+
+    /** What to put back in the cashier's search field, or empty for none. */
+    public static String cashierSearch() {
+        return rememberSearch ? lastCashierSearch : "";
+    }
+
+    public static void setCashierSearch(String query) {
+        if (rememberSearch) {
+            lastCashierSearch = query == null ? "" : query;
         }
     }
 }

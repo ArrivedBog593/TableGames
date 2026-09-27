@@ -145,6 +145,27 @@ public final class SlotCabinet implements TableRuntime {
         return Optional.ofNullable(lastResult);
     }
 
+    /**
+     * The most a line may be played for, in credits, on this many lines,
+     * before the house could not cover the worst the reels can do.
+     * <p>
+     * The worst being every line landing the best combination at once, which
+     * is what the pull is checked against — so this is exactly the stake
+     * {@link #spin} would still take, worked out in advance for the screen's
+     * "max" to offer and for a refusal to name. It moves with the bankroll
+     * and with what other tables have committed, so it is a promise about
+     * now and nothing longer.
+     */
+    public long houseCapPerLine(MinecraftServer server, int lines) {
+        long headroom = block.funds().exposureHeadroom(server, game, block.commitmentKey());
+        if (headroom == Long.MAX_VALUE) {
+            return Long.MAX_VALUE;
+        }
+        long worstPerCredit = Math.multiplyExact(game.priceOf(1, block.settings()),
+                (long) machine().maxMultiple(lines));
+        return worstPerCredit <= 0 ? Long.MAX_VALUE : headroom / worstPerCredit;
+    }
+
     public long lastWin() {
         return lastWin;
     }
@@ -304,7 +325,15 @@ public final class SlotCabinet implements TableRuntime {
         // every way the reels can stop, not guessed from the paytable.
         long worstCase = Math.multiplyExact(perLine, (long) machine().maxMultiple(lines));
         if (!block.funds().withinExposure(server, game, block.commitmentKey(), worstCase)) {
-            return Component.translatable("tablegames.reject.house_exposed");
+            // Named, and said as what it is: this pull is more than the house
+            // will stand behind, and here is the most it will. The general
+            // "the house has too much out" read as other tables' fault and
+            // left the player guessing how much less to try.
+            long cap = houseCapPerLine(server, lines);
+            return cap <= 0
+                    ? Component.translatable("tablegames.reject.house_exposed")
+                    : Component.translatable("tablegames.slots.house_cap",
+                            CreditFormat.of(cap), lines);
         }
 
         return run(server, player, pull);

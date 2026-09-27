@@ -63,14 +63,20 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
     private static final int SEARCH_Y = 28;
     private static final int SEARCH_H = 14;
     /**
-     * Narrower than the shop's, to fit the price-side button beside it.
+     * Narrower than the shop's, to fit the price-side button and the remember
+     * toggle beside it.
      * <p>
      * The catalog here is a list of plain items, so a query is usually a word
      * or two — "diamante", "hierro" — where the shop has to reach named and
-     * enchanted stacks. The room buys something the shop does not need.
+     * enchanted stacks. The room buys something the shop does not need. Four
+     * controls and their gaps come to exactly the grid's width: search, sort,
+     * remember, price side.
      */
-    private static final int SEARCH_W = 80;
+    private static final int SEARCH_W = 70;
     private static final int SORT_W = 62;
+
+    /** The remember toggle, the same size and in the same place beside sort as the shop's. */
+    private static final int REMEMBER_W = 11;
 
     /** Wide enough for the longer of the two labels with room to spare. */
     private static final int MODE_W = 47;
@@ -139,6 +145,20 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
 
     private long confirmUntil;
     private long confirmBuyUntil;
+
+    /**
+     * The convert button, armed by a first press and fired by a second.
+     * <p>
+     * Converting gives credits rather than spending them, which is why it
+     * used to go on one click. It is not harmless for that: getting the items
+     * back costs the cashier's surcharge, so a stray click on a full tray is
+     * a small loss the player did not choose. Armed for the figure that was
+     * on the button when it was pressed and nothing else — if the tray
+     * changes while it waits, the arming is void and the new figure has to be
+     * seen and agreed to again.
+     */
+    private long confirmConvertUntil;
+    private long confirmConvertValue;
     private long pendingSince;
     private long balanceAtSend;
     private boolean suppressQuantity;
@@ -221,13 +241,16 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
     protected void init() {
         super.init();
 
-        String carriedSearch = search == null ? "" : search.getValue();
+        // On a resize, whatever is on screen wins; on a fresh opening, the
+        // remembered query if the player left that on — as the shop does.
+        String carriedSearch = search == null ? ScreenPreferences.cashierSearch() : search.getValue();
         search = new EditBox(font, leftPos + GRID_X + TEXT_INSET, topPos + SEARCH_Y + TEXT_Y,
                 SEARCH_W - TEXT_INSET * 2, 8, Component.translatable("tablegames.shop.search"));
         search.setBordered(false);
         search.setHint(Component.translatable("tablegames.shop.search"));
         search.setResponder(text -> {
             catalog.setQuery(text);
+            ScreenPreferences.setCashierSearch(text);
             scroll = 0;
         });
         search.setValue(carriedSearch);
@@ -436,6 +459,14 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
         graphics.drawString(font, label, sortX + (SORT_W - font.width(label)) / 2,
                 y + TEXT_Y, 0xFFFFFFFF, false);
 
+        // The remember toggle, drawn exactly as the shop draws its own: a "P",
+        // gold while searches are kept. Minecraft's font has no pin glyph.
+        int pinX = rememberButtonX();
+        drawControl(graphics, pinX, y, REMEMBER_W, Panels.OUTLINE, CONTROL_FACE,
+                isOver(mouseX, mouseY, pinX, y, REMEMBER_W, SEARCH_H));
+        graphics.drawString(font, "P", pinX + (REMEMBER_W - font.width("P")) / 2, y + TEXT_Y,
+                ScreenPreferences.rememberSearch() ? 0xFFE0B33A : 0xFF9A9A9A, false);
+
         int modeX = modeButtonX();
         drawControl(graphics, modeX, y, MODE_W, Panels.OUTLINE, CONTROL_FACE,
                 isOver(mouseX, mouseY, modeX, y, MODE_W, SEARCH_H));
@@ -449,8 +480,12 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
         }
     }
 
+    private int rememberButtonX() {
+        return sortButtonX() + SORT_W + 3;
+    }
+
     private int modeButtonX() {
-        return sortButtonX() + SORT_W + 4;
+        return rememberButtonX() + REMEMBER_W + 4;
     }
 
     private void renderCart(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -579,11 +614,26 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
             label = Component.translatable("tablegames.cashier.convert");
         } else if (stale) {
             label = Component.translatable("tablegames.cashier.tray_stale");
+        } else if (convertArmed()) {
+            // The figure stays on the button while it asks, so the second
+            // press is agreeing to a number and not to a word. Only a figure
+            // too long to fit with it gives way.
+            label = Component.translatable("tablegames.cashier.convert_confirm", format(quotedTrayValue));
+            if (font.width(label) > CONVERT_W - 6) {
+                label = Component.translatable("tablegames.cart.buy_confirm");
+            }
         } else {
             label = Component.literal("+" + format(quotedTrayValue));
         }
         graphics.drawString(font, label, x + (CONVERT_W - font.width(label)) / 2,
                 y + (CONVERT_H - 8) / 2, enabled ? 0xFFFFFFFF : 0xFF9A9A9A, false);
+    }
+
+    /** Whether a first press is waiting for a second, for the figure still showing. */
+    private boolean convertArmed() {
+        return System.currentTimeMillis() < confirmConvertUntil
+                && confirmConvertValue == quotedTrayValue
+                && !trayIsStale();
     }
 
     /** Whether the cashier has revalued something sitting in the tray. */
@@ -623,6 +673,21 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
     protected void renderTooltip(@NotNull GuiGraphics graphics, int mouseX, int mouseY) {
         super.renderTooltip(graphics, mouseX, mouseY);
 
+        if (isOver(mouseX, mouseY, rememberButtonX(), topPos + SEARCH_Y, REMEMBER_W, SEARCH_H)) {
+            // The shop's own words: it is one switch, and says the same thing
+            // wherever it is pressed.
+            boolean on = ScreenPreferences.rememberSearch();
+            graphics.renderComponentTooltip(font, List.of(
+                            Component.translatable(on
+                                    ? "tablegames.shop.remember_on"
+                                    : "tablegames.shop.remember_off"),
+                            Component.translatable(on
+                                            ? "tablegames.shop.remember_on_hint"
+                                            : "tablegames.shop.remember_off_hint")
+                                    .withStyle(ChatFormatting.GRAY)),
+                    mouseX, mouseY);
+            return;
+        }
         if (isOver(mouseX, mouseY, sortButtonX(), topPos + SEARCH_Y, SORT_W, SEARCH_H)) {
             List<Component> lines = new ArrayList<>();
             lines.add(Component.translatable("tablegames.shop.sort_title"));
@@ -661,6 +726,13 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
                             Component.translatable("tablegames.cashier.tray_stale_hint",
                                             format(quotedTrayValue),
                                             format(menu.depositValue()))
+                                    .withStyle(ChatFormatting.GRAY))
+                            : convertArmed()
+                            // What the second press costs if it was a mistake,
+                            // said while there is still time not to make it.
+                            ? List.of(Component.translatable("tablegames.cashier.convert_confirm",
+                                            format(quotedTrayValue)),
+                            Component.translatable("tablegames.cashier.convert_confirm_hint")
                                     .withStyle(ChatFormatting.GRAY))
                             : List.of(Component.translatable("tablegames.cashier.convert"),
                             Component.translatable("tablegames.cashier.convert_hint")
@@ -840,6 +912,13 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
             playClick();
             return true;
         }
+        if (isOver(x, y, rememberButtonX(), topPos + SEARCH_Y, REMEMBER_W, SEARCH_H)) {
+            ScreenPreferences.setRememberSearch(!ScreenPreferences.rememberSearch());
+            // Turning it on keeps what is typed now, not only what is typed next.
+            ScreenPreferences.setCashierSearch(search == null ? "" : search.getValue());
+            playClick();
+            return true;
+        }
         if (isOver(x, y, modeButtonX(), topPos + SEARCH_Y, MODE_W, SEARCH_H)) {
             showSalePrice = !showSalePrice;
             ScreenPreferences.setCashierShowSalePrice(showSalePrice);
@@ -852,9 +931,15 @@ public class CashierScreen extends AbstractContainerScreen<CashierMenu> {
                 // Accepting the new figure and converting at it are two
                 // presses, so the number is seen before it is agreed to.
                 quotedTrayValue = menu.depositValue();
+                confirmConvertUntil = 0;
+            } else if (!convertArmed()) {
+                // First press: ask, the same way buying does.
+                confirmConvertUntil = System.currentTimeMillis() + CONFIRM_MILLIS;
+                confirmConvertValue = quotedTrayValue;
             } else {
                 // The figure on the button travels with the request, so the
                 // server can refuse a tray that moved in the meantime.
+                confirmConvertUntil = 0;
                 PacketDistributor.sendToServer(new CashierConvertPayload(quotedTrayValue));
             }
             playClick();

@@ -64,6 +64,20 @@ public final class HouseExposure {
         return total() - committedBy(tableKey) + worstCase <= maximumExposure;
     }
 
+    /**
+     * The largest worst case this table could move to and still fit: the
+     * ceiling, less what every other table has committed.
+     * <p>
+     * The same arithmetic as {@link #fits}, asked the other way round, so a
+     * table can tell a player what it would take before they offer something
+     * it would refuse. Its own commitment is not subtracted, for the same
+     * reason it is replaced rather than added to there.
+     */
+    public long headroom(String tableKey, long maximumExposure) {
+        Objects.requireNonNull(tableKey, "tableKey");
+        return Math.max(0, maximumExposure - (total() - committedBy(tableKey)));
+    }
+
     /** Records a table's worst case, replacing whatever it had before. */
     public void commit(String tableKey, long worstCase) {
         Objects.requireNonNull(tableKey, "tableKey");

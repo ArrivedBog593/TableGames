@@ -12,6 +12,7 @@ import com.github.arrivedbog593.tablegames.platform.network.SlotsActionPayload;
 import com.github.arrivedbog593.tablegames.platform.network.SlotsStatePayload;
 import com.github.arrivedbog593.tablegames.platform.network.TableActionPayload;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
@@ -88,6 +89,19 @@ public class SlotMachineScreen extends TableScreen {
     private static final int LINE_LIT = 0xFFE0B020;
 
     /**
+     * A button's face, dark on the panel's light gray — the shop's and the
+     * cashier's. The panel's own gray made every button here the color of the
+     * background it sat on, readable only by its bevel; dark reads as
+     * something to press.
+     */
+    private static final int CONTROL_FACE = 0xFF555555;
+    private static final int CONTROL_TEXT = 0xFFFFFFFF;
+
+    /** A button that cannot be pressed yet: darker still, its label dimmed. */
+    private static final int DISABLED_FACE = 0xFF4A4A4A;
+    private static final int DISABLED_TEXT = 0xFF9A9A9A;
+
+    /**
      * One color per payline, without alpha; how bright a line is drawn is
      * decided where it is drawn. Distinct enough that two lines crossing the
      * same cell stay two lines.
@@ -139,6 +153,9 @@ public class SlotMachineScreen extends TableScreen {
     private static final int PITCH = CELL + CELL_GAP;
 
 
+    /** Where the stake is typed, while it is being typed; hidden otherwise. */
+    private EditBox stakeBox;
+
     /** The buy-in prompt, while it is open. Everything under it is covered. */
     private BuyInPrompt prompt;
 
@@ -169,6 +186,13 @@ public class SlotMachineScreen extends TableScreen {
     private int lineButtonX(int index) {
         int row = Payline.MAX * LINE_BUTTON_W + (Payline.MAX - 1) * 4;
         return left + (PANEL_W - row) / 2 + index * (LINE_BUTTON_W + 4);
+    }
+
+    private static final int STAKE_FIELD_W = 72;
+
+    /** The recess the stake sits in, between minus and plus. */
+    private int stakeFieldX() {
+        return left + PANEL_W / 2 - 36;
     }
 
     private int stakeY() {
@@ -207,6 +231,21 @@ public class SlotMachineScreen extends TableScreen {
     @Override
     protected void init() {
         super.init();
+        // Typing a stake, for the player who pressed Max and wants to come
+        // back down to one without a hundred clicks on minus. Hidden until
+        // the figure is clicked; the formatted figure is drawn the rest of
+        // the time, since the box shows bare digits.
+        stakeBox = new EditBox(font, stakeFieldX() + 4, stakeY() + 4, STAKE_FIELD_W - 8, 8,
+                Component.translatable("tablegames.slots.per_line"));
+        stakeBox.setMaxLength(13);
+        stakeBox.setBordered(false);
+        stakeBox.setTextColor(0xFFFFFF);
+        stakeBox.setFilter(text -> text.chars().allMatch(Character::isDigit));
+        // Empty counts as nothing, which the clamp turns into the machine's
+        // minimum: clearing the box is how a player asks for the smallest bet.
+        stakeBox.setResponder(text -> ClientSlotsState.setPerLine(
+                text.isEmpty() ? 0 : Long.parseLong(text)));
+        addWidget(stakeBox);
         // A resize rebuilds every widget and moves the panel, so a prompt
         // that was open is laid out again where the panel now is.
         if (prompt != null) {
@@ -214,7 +253,28 @@ public class SlotMachineScreen extends TableScreen {
         }
     }
 
+    private boolean editingStake() {
+        return stakeBox != null && stakeBox.isFocused();
+    }
+
+    /** Opens the stake for typing, all of it selected so the first key replaces it. */
+    private void editStake(boolean clear) {
+        stakeBox.setValue(clear ? "" : String.valueOf(ClientSlotsState.perLine()));
+        setFocused(stakeBox);
+        stakeBox.setFocused(true);
+        stakeBox.moveCursorToEnd(false);
+        stakeBox.setHighlightPos(0);
+    }
+
+    private void finishStake() {
+        if (editingStake()) {
+            stakeBox.setFocused(false);
+            setFocused(null);
+        }
+    }
+
     private void openPrompt(boolean rebuy) {
+        finishStake();
         closePrompt();
         prompt = new BuyInPrompt(font, rebuy, left + PANEL_W / 2, top + PANEL_H / 2,
                 () -> ClientSlotsState.state().funds(),
@@ -248,6 +308,11 @@ public class SlotMachineScreen extends TableScreen {
     /** Enter confirms and Escape backs out of the prompt, not the machine. */
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (editingStake() && (keyCode == GLFW.GLFW_KEY_ESCAPE
+                || keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
+            finishStake();
+            return true;
+        }
         if (prompt != null) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 prompt.cancel();
@@ -614,11 +679,11 @@ public class SlotMachineScreen extends TableScreen {
             boolean selected = chosen == i + 1;
             boolean hovered = isOver(mouseX, mouseY, x, lineButtonY(), LINE_BUTTON_W, BUTTON_H);
             drawButton(graphics, x, lineButtonY(), LINE_BUTTON_W, BUTTON_H,
-                    selected ? LINE_LIT : PANEL, hovered);
+                    selected ? LINE_LIT : CONTROL_FACE, hovered);
             String text = String.valueOf(i + 1);
             graphics.drawString(font, text,
                     x + (LINE_BUTTON_W - font.width(text)) / 2, lineButtonY() + 4,
-                    selected ? 0xFF201800 : LABEL_TEXT, false);
+                    selected ? 0xFF201800 : CONTROL_TEXT, false);
         }
     }
 
@@ -631,24 +696,28 @@ public class SlotMachineScreen extends TableScreen {
 
         int minusX = left + PANEL_W / 2 - 60;
         int plusX = left + PANEL_W / 2 + 40;
-        drawButton(graphics, minusX, y, 20, BUTTON_H, PANEL,
+        drawButton(graphics, minusX, y, 20, BUTTON_H, CONTROL_FACE,
                 isOver(mouseX, mouseY, minusX, y, 20, BUTTON_H));
-        graphics.drawString(font, "-", minusX + 8, y + 4, LABEL_TEXT, false);
-        drawButton(graphics, plusX, y, 20, BUTTON_H, PANEL,
+        graphics.drawString(font, "-", minusX + 8, y + 4, CONTROL_TEXT, false);
+        drawButton(graphics, plusX, y, 20, BUTTON_H, CONTROL_FACE,
                 isOver(mouseX, mouseY, plusX, y, 20, BUTTON_H));
-        graphics.drawString(font, "+", plusX + 7, y + 4, LABEL_TEXT, false);
+        graphics.drawString(font, "+", plusX + 7, y + 4, CONTROL_TEXT, false);
 
-        drawRecess(graphics, minusX + 24, y, 72, BUTTON_H);
-        String stake = format(ClientSlotsState.perLine());
-        graphics.drawString(font, stake, minusX + 24 + (72 - font.width(stake)) / 2, y + 4,
-                0xFFFFFFFF, false);
+        drawRecess(graphics, stakeFieldX(), y, STAKE_FIELD_W, BUTTON_H);
+        if (editingStake()) {
+            stakeBox.render(graphics, mouseX, mouseY, 0);
+        } else {
+            String stake = format(ClientSlotsState.perLine());
+            graphics.drawString(font, stake, stakeFieldX() + (STAKE_FIELD_W - font.width(stake)) / 2,
+                    y + 4, 0xFFFFFFFF, false);
+        }
 
         int maxX = plusX + 24;
         boolean hovered = isOver(mouseX, mouseY, maxX, y, 44, BUTTON_H);
-        drawButton(graphics, maxX, y, 44, BUTTON_H, PANEL, hovered);
+        drawButton(graphics, maxX, y, 44, BUTTON_H, CONTROL_FACE, hovered);
         Component max = Component.translatable("tablegames.slots.max_bet");
         graphics.drawString(font, max, maxX + (44 - font.width(max)) / 2, y + 4,
-                LABEL_TEXT, false);
+                CONTROL_TEXT, false);
     }
 
     private void drawSpin(GuiGraphics graphics, SlotsStatePayload state, int mouseX, int mouseY) {
@@ -656,13 +725,13 @@ public class SlotMachineScreen extends TableScreen {
         int y = spinY();
         boolean ready = canSpin(state);
         boolean hovered = ready && isOver(mouseX, mouseY, x, y, SPIN_W, BUTTON_H);
-        drawButton(graphics, x, y, SPIN_W, BUTTON_H, ready ? 0xFFB03020 : SLOT_FILL, hovered);
+        drawButton(graphics, x, y, SPIN_W, BUTTON_H, ready ? 0xFFB03020 : DISABLED_FACE, hovered);
 
         Component label = state.spin().owesAFreeSpin()
                 ? Component.translatable("tablegames.slots.free_spin")
                 : Component.translatable("tablegames.slots.spin");
         graphics.drawString(font, label, x + (SPIN_W - font.width(label)) / 2, y + 4,
-                ready ? 0xFFFFFFFF : 0xFF606060, false);
+                ready ? 0xFFFFFFFF : DISABLED_TEXT, false);
 
         // What the pull costs, under the lever, so nobody finds out after.
         // In credits, and beside it what those credits are worth, because
@@ -746,9 +815,9 @@ public class SlotMachineScreen extends TableScreen {
                 ? Component.translatable("tablegames.slots.add_credits")
                 : Component.translatable("tablegames.slots.insert_credits");
         boolean hovered = isOver(mouseX, mouseY, x, y, SEAT_BUTTON_W, BUTTON_H);
-        drawButton(graphics, x, y, SEAT_BUTTON_W, BUTTON_H, PANEL, hovered);
+        drawButton(graphics, x, y, SEAT_BUTTON_W, BUTTON_H, CONTROL_FACE, hovered);
         graphics.drawString(font, first, x + (SEAT_BUTTON_W - font.width(first)) / 2, y + 4,
-                LABEL_TEXT, false);
+                CONTROL_TEXT, false);
 
         if (!seated) {
             return;
@@ -764,9 +833,9 @@ public class SlotMachineScreen extends TableScreen {
                 ? "tablegames.slots.collect" : "tablegames.slots.cash_out");
         boolean outHovered = isOver(mouseX, mouseY, outX, y, SEAT_BUTTON_W, BUTTON_H);
         drawButton(graphics, outX, y, SEAT_BUTTON_W, BUTTON_H,
-                banked ? 0xFF2E7D32 : PANEL, outHovered);
+                banked ? 0xFF2E7D32 : CONTROL_FACE, outHovered);
         graphics.drawString(font, out, outX + (SEAT_BUTTON_W - font.width(out)) / 2, y + 4,
-                banked ? 0xFFFFFFFF : LABEL_TEXT, false);
+                banked ? 0xFFFFFFFF : CONTROL_TEXT, false);
     }
 
     // --- Clicking --------------------------------------------------------------------
@@ -788,6 +857,11 @@ public class SlotMachineScreen extends TableScreen {
             return super.mouseClicked(mouseX, mouseY, button);
         }
 
+        // Clicking anywhere but the stake is done typing it.
+        if (!isOver(mx, my, stakeFieldX(), stakeY(), STAKE_FIELD_W, BUTTON_H)) {
+            finishStake();
+        }
+
         SlotsStatePayload state = ClientSlotsState.state();
 
         for (int i = 0; i < Payline.MAX; i++) {
@@ -801,6 +875,15 @@ public class SlotMachineScreen extends TableScreen {
         int y = stakeY();
         int minusX = left + PANEL_W / 2 - 60;
         int plusX = left + PANEL_W / 2 + 40;
+        // Left click types over the stake; right click empties it, which is
+        // the minimum.
+        if (isOver(mx, my, stakeFieldX(), y, STAKE_FIELD_W, BUTTON_H)) {
+            if (editingStake() && button == 0) {
+                return super.mouseClicked(mouseX, mouseY, button);
+            }
+            editStake(button == 1);
+            return true;
+        }
         if (isOver(mx, my, minusX, y, 20, BUTTON_H)) {
             ClientSlotsState.setPerLine(ClientSlotsState.perLine() - step(state));
             click();
@@ -885,10 +968,9 @@ public class SlotMachineScreen extends TableScreen {
      * the meter taken into account.
      */
     private static long largestStake(SlotsStatePayload state) {
-        long ceiling = state.machine().betMaximum();
         long affordable = Math.max(state.machine().betMinimum(),
-                state.funds().stackHeld() / Payline.MAX);
-        return ceiling > 0 ? Math.min(ceiling, affordable) : affordable;
+                state.funds().stackHeld() / ClientSlotsState.lines());
+        return Math.min(ClientSlotsState.ceiling(), affordable);
     }
 
     private void sendSeatAction(int kind, long amount) {
