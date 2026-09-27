@@ -8,8 +8,6 @@ import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.block.RouletteTable;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
-import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.mojang.authlib.GameProfile;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.core.UUIDUtil;
@@ -332,8 +330,8 @@ public record RouletteStatePayload(TableView table, RouletteView roulette)
         Optional<BuyIn> buyIn = table.buyIn();
         RouletteView mine = new RouletteView(
                 new PlayerFunds(
-                        CreditStorage.get(server).balanceOf(playerId),
-                        OutcomeSettler.stakes()
+                        table.funds().balanceOf(server, playerId),
+                        table.funds().stakes()
                                 .committedElsewhere(playerId, table.commitmentKey()),
                         table.stackOf(playerId),
                         buyIn.map(BuyIn::minimum).orElse(0L),

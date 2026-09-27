@@ -6,6 +6,7 @@ import com.github.arrivedbog593.tablegames.platform.registry.ModBlocks;
 import com.github.arrivedbog593.tablegames.platform.registry.ModCreativeTabs;
 import com.github.arrivedbog593.tablegames.platform.registry.ModItems;
 import com.github.arrivedbog593.tablegames.platform.registry.ModMenus;
+import com.github.arrivedbog593.tablegames.platform.registry.ModSounds;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -34,6 +35,7 @@ public final class TableGames {
         ModBlockEntities.register(modEventBus);
         ModMenus.register(modEventBus);
         ModCreativeTabs.register(modEventBus);
+        ModSounds.register(modEventBus);
 
         // Games are plain Java and need no registry event, but they must exist
         // before any table tries to resolve its saved game id.

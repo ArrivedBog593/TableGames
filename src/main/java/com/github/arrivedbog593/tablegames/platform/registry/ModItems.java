@@ -3,6 +3,7 @@ package com.github.arrivedbog593.tablegames.platform.registry;
 import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.platform.item.AdminKeyItem;
 import com.github.arrivedbog593.tablegames.platform.item.TableKeyItem;
+import com.github.arrivedbog593.tablegames.platform.item.TestKeyItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.neoforged.bus.api.IEventBus;
@@ -44,6 +45,10 @@ public final class ModItems {
      */
     public static final DeferredItem<TableKeyItem> TABLE_KEY =
             ITEMS.register("table_key", () -> new TableKeyItem(new Item.Properties()));
+
+    /** Registered in every build so worlds load the same; it only works in development. */
+    public static final DeferredItem<TestKeyItem> TEST_KEY =
+            ITEMS.register("test_key", () -> new TestKeyItem(new Item.Properties()));
 
     private ModItems() {
     }

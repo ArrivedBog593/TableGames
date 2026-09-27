@@ -3,6 +3,8 @@ package com.github.arrivedbog593.tablegames.platform.block;
 import com.github.arrivedbog593.tablegames.engine.games.slots.Payline;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotAction;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotMachine;
+import com.github.arrivedbog593.tablegames.engine.games.slots.SlotRig;
+import com.github.arrivedbog593.tablegames.engine.games.slots.SlotSymbol;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotsGame;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotsSession;
 import com.github.arrivedbog593.tablegames.engine.session.ActionResult;
@@ -21,6 +23,7 @@ import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
@@ -74,8 +77,14 @@ public final class SlotCabinet implements TableRuntime {
      */
     private SlotMachine.SpinResult lastResult;
 
+    /** What the next pull has been told to land, by id, on a test table; null to let it fall. */
+    private String rigged;
+
     /** What the last spin paid, so the screen can say so. */
     private long lastWin;
+
+    /** How many lines the last spin was played on, so a win can be weighed against it. */
+    private int lastLines;
 
     /**
      * The prize bank: what has been won and not yet gambled again.
@@ -138,6 +147,30 @@ public final class SlotCabinet implements TableRuntime {
 
     public long lastWin() {
         return lastWin;
+    }
+
+    /**
+     * What the cabinet should announce for the last spin, or nothing while
+     * the reels are still turning.
+     * <p>
+     * Nothing while they turn is the point of it. The spin was settled the
+     * instant the lever was pulled, and this is read by the update every
+     * client in earshot gets — so it keeps the same silence the screen's
+     * payload keeps about the symbols and the prize bank until the spin is
+     * over, and a client that went looking would find nothing early.
+     */
+    public SlotFanfare fanfare() {
+        if (rolling || lastResult == null) {
+            return SlotFanfare.NONE;
+        }
+        // The top of this machine's card, not a symbol named here: whatever
+        // pays most for three is the jackpot, on any card it is ever given.
+        SlotSymbol top = machine().paytable().threeOfAKind().entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(SlotSymbol.NETHERITE);
+        return SlotFanfare.of(lastResult.totalMultiple(), lastLines, lastResult.replay(),
+                lastResult.threeOnAPaidLine(top));
     }
 
     /** What is in the prize bank, in the currency a balance is kept in. */
@@ -270,7 +303,7 @@ public final class SlotCabinet implements TableRuntime {
         // the machine's best combination at once. Counted by the engine over
         // every way the reels can stop, not guessed from the paytable.
         long worstCase = Math.multiplyExact(perLine, (long) machine().maxMultiple(lines));
-        if (!OutcomeSettler.withinExposure(server, game, block.commitmentKey(), worstCase)) {
+        if (!block.funds().withinExposure(server, game, block.commitmentKey(), worstCase)) {
             return Component.translatable("tablegames.reject.house_exposed");
         }
 
@@ -292,6 +325,16 @@ public final class SlotCabinet implements TableRuntime {
         SlotsSession session = game.createSession(
                 List.of(Seat.forPlayer(0, playerId, block.stackOf(playerId))), random, machine());
         session.begin();
+        // A test table told what to land: stops on these reels that show it,
+        // and then the same settlement as ever. Checked again here rather
+        // than trusted from when it was set, and spent on this pull whatever
+        // happens to it, so a result asked for once lands once.
+        if (rigged != null && block.isTestTable()) {
+            SlotRig.target(machine().paytable(), rigged)
+                    .flatMap(target -> SlotRig.stopsFor(machine(), target))
+                    .ifPresent(session::rig);
+        }
+        rigged = null;
 
         ActionResult result = session.submit(playerId, pull);
         if (!result.accepted()) {
@@ -309,7 +352,7 @@ public final class SlotCabinet implements TableRuntime {
             return Component.translatable("tablegames.table.round_failed");
         }
 
-        OutcomeSettler.Result settled = OutcomeSettler.settle(
+        OutcomeSettler.Result settled = block.funds().settle(
                 server, game, outcome, "at " + block.getBlockPos().toShortString());
         if (!settled.applied()) {
             // Nothing moved, so the spin never happened. The free spin it
@@ -322,6 +365,7 @@ public final class SlotCabinet implements TableRuntime {
 
         this.free = landed.replay() ? new Free(pull.lines(), pull.perLine()) : null;
         this.lastResult = landed;
+        this.lastLines = pull.lines();
         this.lastWin = Math.multiplyExact(pull.perLine(), (long) landed.totalMultiple());
         // Whatever was in the bank has just been played — the stake came out
         // of the one stack and the bank was only ever a mark on part of it —
@@ -410,6 +454,49 @@ public final class SlotCabinet implements TableRuntime {
         lastWin = 0;
         prizes = 0;
         free = null;
+    }
+
+    @Override
+    public List<RigOption> rigOptions() {
+        return SlotRig.targets(machine().paytable()).stream()
+                .map(target -> new RigOption(target.id(),
+                        Component.translatable("tablegames.debug.rig.slots." + target.id()),
+                        tintOf(target)))
+                .toList();
+    }
+
+    /** Each result in the color of what it is made of, so the list reads at a glance. */
+    private static int tintOf(SlotRig.Target target) {
+        if (target.symbol() == null) {
+            return 0x808080;
+        }
+        return switch (target.symbol()) {
+            case NETHERITE -> 0xE0B020;
+            case DIAMOND -> 0x5ED8E0;
+            case EMERALD -> 0x3CC864;
+            case GOLD -> 0xF0D060;
+            case IRON -> 0xD0D0D0;
+            case COAL -> 0x9A9A9A;
+            case REPLAY -> 0xE8A040;
+        };
+    }
+
+    @Override
+    public boolean rig(String optionId) {
+        if (optionId == null) {
+            rigged = null;
+            return true;
+        }
+        if (SlotRig.target(machine().paytable(), optionId).isEmpty()) {
+            return false;
+        }
+        rigged = optionId;
+        return true;
+    }
+
+    @Override
+    public Optional<String> rigged() {
+        return Optional.ofNullable(rigged);
     }
 
     @Override

@@ -11,9 +11,10 @@ import com.github.arrivedbog593.tablegames.engine.table.TableOccupancy;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 import com.github.arrivedbog593.tablegames.engine.table.TableStacks;
 import com.github.arrivedbog593.tablegames.platform.economy.BuyInMessages;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
-import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
+import com.github.arrivedbog593.tablegames.platform.economy.RealFunds;
+import com.github.arrivedbog593.tablegames.platform.economy.SandboxFunds;
+import com.github.arrivedbog593.tablegames.platform.economy.TableFunds;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -29,6 +30,7 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
@@ -145,6 +147,16 @@ public abstract class GameBlockEntity extends BlockEntity {
     private TableRuntime runtime = TableRuntime.IdleRuntime.INSTANCE;
 
     /**
+     * Where this block's money comes from: the real economy, or a test
+     * table's pretend one.
+     * <p>
+     * Not saved. A test table that came back from a restart would be a table
+     * nobody remembered making, taking wagers that look real and are not, so
+     * every block loads real and has to be made a test table again.
+     */
+    private TableFunds funds = RealFunds.INSTANCE;
+
+    /**
      * Whether clients need a fresh snapshot.
      * <p>
      * Set instead of broadcasting on the spot and flushed once per tick.
@@ -193,6 +205,73 @@ public abstract class GameBlockEntity extends BlockEntity {
     /** The live game, whatever it is. */
     public TableRuntime runtime() {
         return runtime;
+    }
+
+    // --- Test tables ------------------------------------------------------------------
+
+    /** Where this block's money comes from and goes to. */
+    public TableFunds funds() {
+        return funds;
+    }
+
+    /** Whether this is a test table, playing with pretend money. */
+    public boolean isTestTable() {
+        return funds.isSandbox();
+    }
+
+    /**
+     * Turns this block into a test table with a pretend bank and a pretend
+     * balance for every player, or changes the figures of one that already is.
+     *
+     * @return why it cannot, or null when done
+     */
+    public Component makeTestTable(long bank, long startingBalance) {
+        Component refusal = switchRefusal();
+        if (refusal != null) {
+            return refusal;
+        }
+        switchFunds(new SandboxFunds(bank, startingBalance));
+        return null;
+    }
+
+    /**
+     * Puts this block back on the real economy, and forgets any result it
+     * was told to land.
+     *
+     * @return why it cannot, or null when done
+     */
+    public Component makeRealTable() {
+        if (!isTestTable()) {
+            return null;
+        }
+        Component refusal = switchRefusal();
+        if (refusal != null) {
+            return refusal;
+        }
+        runtime.rig(null);
+        switchFunds(RealFunds.INSTANCE);
+        return null;
+    }
+
+    /**
+     * Only an empty table changes where its money comes from.
+     * <p>
+     * A stack is a reservation against one economy and a wager a promise in
+     * it; carried across to the other they would be reservations against
+     * credits that do not exist there, or pretend credits settled as real.
+     */
+    private Component switchRefusal() {
+        if (!occupancy.seats().isEmpty() || !stacks.players().isEmpty() || runtime.hasLiveStakes()) {
+            return Component.translatable("tablegames.debug.table_not_empty");
+        }
+        return null;
+    }
+
+    private void switchFunds(TableFunds next) {
+        releaseCommitments();
+        funds = next;
+        publishCommitments();
+        markDirty();
     }
 
     /** Whether a game is assigned and its settings were confirmed, so it may be played. */
@@ -402,8 +481,8 @@ public abstract class GameBlockEntity extends BlockEntity {
      */
     public long available(ServerPlayer player) {
         UUID playerId = player.getUUID();
-        long balance = CreditStorage.get(player.server).balanceOf(playerId);
-        long elsewhere = OutcomeSettler.stakes().committedElsewhere(playerId, commitmentKey());
+        long balance = funds.balanceOf(player.server, playerId);
+        long elsewhere = funds.stakes().committedElsewhere(playerId, commitmentKey());
         return Math.max(0L, balance - elsewhere - stacks.stackOf(playerId));
     }
 
@@ -625,19 +704,19 @@ public abstract class GameBlockEntity extends BlockEntity {
     void publishCommitments() {
         long worstCase = runtime.worstCaseHouseCost();
         if (worstCase > 0) {
-            OutcomeSettler.commitExposure(commitmentKey(), worstCase);
+            funds.commitExposure(commitmentKey(), worstCase);
         } else {
-            OutcomeSettler.releaseExposure(commitmentKey());
+            funds.releaseExposure(commitmentKey());
         }
 
         // Cleared first, so that a player who took every chip back, or stood
         // up, is released rather than left at whatever they had before.
-        OutcomeSettler.releaseStakes(commitmentKey());
+        funds.releaseStakes(commitmentKey());
         Set<UUID> holders = new LinkedHashSet<>(stacks.players());
         holders.addAll(occupancy.seats());
         for (UUID playerId : holders) {
             long held = Math.max(stacks.stackOf(playerId), runtime.wageredBy(playerId));
-            OutcomeSettler.commitStake(commitmentKey(), playerId, held);
+            funds.commitStake(commitmentKey(), playerId, held);
         }
     }
 
@@ -668,8 +747,8 @@ public abstract class GameBlockEntity extends BlockEntity {
 
     /** Lets go of the bankroll and of everybody's credits at once. */
     private void releaseCommitments() {
-        OutcomeSettler.releaseExposure(commitmentKey());
-        OutcomeSettler.releaseStakes(commitmentKey());
+        funds.releaseExposure(commitmentKey());
+        funds.releaseStakes(commitmentKey());
     }
 
     /** Whatever a player had here goes with their seat: wagers and stack alike. */
@@ -729,6 +808,19 @@ public abstract class GameBlockEntity extends BlockEntity {
     }
 
     // --- Talking to clients ---------------------------------------------------------
+
+    /**
+     * Sends this block's update to every client in range, carrying whatever
+     * the game has to tell the room — see {@link TableRuntime#writeNews}.
+     * <p>
+     * Different from {@link #markDirty}, which reaches only the people with
+     * the game open. This reaches everyone near enough to hear the block.
+     */
+    public void announce() {
+        if (level != null && !level.isClientSide) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
+        }
+    }
 
     /** Marks the table as needing a snapshot on the next tick. */
     public void markDirty() {

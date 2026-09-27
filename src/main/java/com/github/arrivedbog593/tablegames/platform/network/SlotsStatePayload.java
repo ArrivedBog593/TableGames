@@ -10,8 +10,6 @@ import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.block.SlotCabinet;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
-import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -261,8 +259,8 @@ public record SlotsStatePayload(MachineView machine, SpinView spin, PlayerFunds 
         long ofMine = mine ? hidden : 0;
         Optional<BuyIn> buyIn = block.buyIn();
         PlayerFunds funds = new PlayerFunds(
-                Math.max(0, CreditStorage.get(server).balanceOf(playerId) - ofMine),
-                OutcomeSettler.stakes().committedElsewhere(playerId, block.commitmentKey()),
+                Math.max(0, block.funds().balanceOf(server, playerId) - ofMine),
+                block.funds().stakes().committedElsewhere(playerId, block.commitmentKey()),
                 Math.max(0, block.stackOf(playerId) - ofMine),
                 buyIn.map(BuyIn::minimum).orElse(0L),
                 buyIn.map(BuyIn::maximum).orElse(0L),

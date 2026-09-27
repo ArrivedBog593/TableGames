@@ -133,5 +133,24 @@ public record SlotMachine(List<Reel> reels, Paytable paytable) {
     public record SpinResult(List<Integer> stops, List<List<SlotSymbol>> window,
                              Map<Payline, Paytable.LineWin> wins, int totalMultiple,
                              boolean replay) {
+
+        /** What a line shows, left to right. */
+        public List<SlotSymbol> along(Payline line) {
+            List<SlotSymbol> symbols = new ArrayList<>(REELS);
+            for (int reel = 0; reel < REELS; reel++) {
+                symbols.add(window.get(reel).get(line.rowOn(reel)));
+            }
+            return symbols;
+        }
+
+        /** Whether some line that paid shows three of this symbol. */
+        public boolean threeOnAPaidLine(SlotSymbol symbol) {
+            for (Payline line : wins.keySet()) {
+                if (along(line).stream().allMatch(symbol::equals)) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 }

@@ -14,11 +14,13 @@ import com.github.arrivedbog593.tablegames.engine.session.Seat;
 import com.github.arrivedbog593.tablegames.engine.table.BettingWindow;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
 import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
 import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
+import com.github.arrivedbog593.tablegames.platform.registry.ModSounds;
 import com.mojang.logging.LogUtils;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -56,6 +58,24 @@ public final class RouletteTable implements TableRuntime {
     private final RouletteLayout layout = new RouletteLayout();
 
     private Pocket lastResult;
+
+    /** Where the next ball has been told to land, on a test table; null to let it fall. */
+    private Pocket rigged;
+
+    /**
+     * When the last ball was thrown, in game ticks, and how many pockets it
+     * runs past on the strip. Zero before the first.
+     * <p>
+     * The time rather than a count, so that a runtime rebuilt from nothing —
+     * the table given a new game, the chunk reloaded — never looks newer than
+     * the spin a client last heard, and never makes a wheel click that nobody
+     * spun.
+     */
+    private long spunAt;
+    private int pocketsPassed;
+
+    /** Whether the last throw paid anybody anything, so the table is heard paying out. */
+    private boolean paidOut;
 
     RouletteTable(GameBlockEntity table, RouletteGame game) {
         this.table = table;
@@ -159,7 +179,7 @@ public final class RouletteTable implements TableRuntime {
      * settlement waiting to happen.
      */
     public long effectiveMaximum(MinecraftServer server, BetType type) {
-        long derived = OutcomeSettler.tableMaximum(server, game, type.payoutRatio());
+        long derived = table.funds().tableMaximum(server, game, type.payoutRatio());
         return Math.min(derived, limits().maximumFor(type));
     }
 
@@ -195,7 +215,7 @@ public final class RouletteTable implements TableRuntime {
         }
         MinecraftServer server = player.server;
 
-        if (!OutcomeSettler.canOpen(server, game)) {
+        if (!table.funds().canOpen(server, game)) {
             return Component.translatable("tablegames.roulette.house_closed");
         }
         if (layout.betsOf(playerId).size()
@@ -224,7 +244,7 @@ public final class RouletteTable implements TableRuntime {
         // The bankroll's limit is table-wide because that is what the house
         // actually has to cover. A straight-up pocket paying 35:1 costs the
         // house the same whether one player or eight put the credits there.
-        long derived = OutcomeSettler.tableMaximum(server, game, bet.type().payoutRatio());
+        long derived = table.funds().tableMaximum(server, game, bet.type().payoutRatio());
         long onTable = layout.stakedOn(null, bet);
         if (onTable + bet.amount() > derived) {
             return Component.translatable("tablegames.reject.position_full",
@@ -248,8 +268,8 @@ public final class RouletteTable implements TableRuntime {
             // other tables. Their chips on this one are not subtracted: the
             // figure this table publishes replaces its own, so counting it
             // here would stop somebody raising a wager they had already placed.
-            long balance = CreditStorage.get(server).balanceOf(playerId);
-            long elsewhere = OutcomeSettler.stakes()
+            long balance = table.funds().balanceOf(server, playerId);
+            long elsewhere = table.funds().stakes()
                     .committedElsewhere(playerId, table.commitmentKey());
             if (wageredBy(playerId) + bet.amount() > balance - elsewhere) {
                 return Component.translatable("tablegames.reject.insufficient_credits");
@@ -263,11 +283,19 @@ public final class RouletteTable implements TableRuntime {
         List<RouletteBet> proposed = new ArrayList<>(layout.allBets());
         proposed.add(bet);
         long worstCase = game.wheel().worstCaseHouseCost(proposed);
-        if (!OutcomeSettler.withinExposure(server, game, table.commitmentKey(), worstCase)) {
+        if (!table.funds().withinExposure(server, game, table.commitmentKey(), worstCase)) {
             return Component.translatable("tablegames.reject.house_exposed");
         }
 
         layout.place(playerId, bet);
+        // Chips on the felt, for the whole table to hear, the bettor included.
+        // Played from here rather than worked out on each client because it
+        // times nothing: there is no animation for it to keep up with.
+        Level level = table.getLevel();
+        if (level != null) {
+            level.playSound(null, table.getBlockPos(), ModSounds.ROULETTE_CHIP.get(), SoundSource.BLOCKS,
+                    0.7f, 0.9f + level.random.nextFloat() * 0.2f);
+        }
         table.publishCommitments();
         // Backing a new chip means you are no longer finished, the same way
         // the engine's own session treats it.
@@ -355,13 +383,12 @@ public final class RouletteTable implements TableRuntime {
 
         // Each seat plays with what the player brought, or with their balance
         // at a game that asks for no buy-in.
-        CreditStorage storage = CreditStorage.get(server);
         boolean stacked = table.buyIn().isPresent();
         List<Seat> seats = new ArrayList<>();
         for (int i = 0; i < players.size(); i++) {
             UUID playerId = players.get(i);
             seats.add(Seat.forPlayer(i, playerId,
-                    stacked ? table.stackOf(playerId) : storage.balanceOf(playerId)));
+                    stacked ? table.stackOf(playerId) : table.funds().balanceOf(server, playerId)));
         }
 
         // RandomSource is Minecraft's own interface and does not implement
@@ -390,6 +417,13 @@ public final class RouletteTable implements TableRuntime {
                 }
             }
         }
+        // A test table told where to land. Checked again here rather than
+        // trusted from when it was set, and spent on this spin whatever
+        // happens to it, so a number asked for once comes up once.
+        if (rigged != null && table.isTestTable()) {
+            session.rig(rigged);
+        }
+        rigged = null;
         session.spin();
 
         Pocket result = session.result().orElse(null);
@@ -401,7 +435,7 @@ public final class RouletteTable implements TableRuntime {
             return;
         }
 
-        OutcomeSettler.Result settled = OutcomeSettler.settle(
+        OutcomeSettler.Result settled = table.funds().settle(
                 server, game, outcome, "at " + table.getBlockPos().toShortString());
 
         if (!settled.applied()) {
@@ -416,7 +450,54 @@ public final class RouletteTable implements TableRuntime {
         table.settleStacks(outcome);
         lastResult = result;
         window.showResult();
+        // The room hears the wheel whether or not anybody has the felt open.
+        // Nothing here is news to a spectator: the number is public the moment
+        // the ball is out, and the strip is theater over it.
+        spunAt = level.getGameTime();
+        pocketsPassed = WheelMotion.pocketsToPass(game.wheel().cylinderIndexOf(result),
+                game.wheel().cylinder().size());
+        paidOut = !outcome.winners().isEmpty();
+        table.announce();
         table.endRound(players);
+    }
+
+    /** The last throw, for the table to be heard running it down. */
+    @Override
+    public void writeNews(CompoundTag tag) {
+        tag.putLong(TableBlockEntity.KEY_WHEEL_AT, spunAt);
+        tag.putInt(TableBlockEntity.KEY_WHEEL_POCKETS, pocketsPassed);
+        tag.putBoolean(TableBlockEntity.KEY_WHEEL_PAID, paidOut);
+    }
+
+    /** Every pocket on this wheel, in the order the felt lists them, in the felt's colors. */
+    @Override
+    public List<RigOption> rigOptions() {
+        return game.wheel().pockets().stream()
+                .map(pocket -> new RigOption(pocket.label(), Component.literal(pocket.label()),
+                        switch (pocket.color()) {
+                            case RED -> 0xC0302C;
+                            case BLACK -> 0x2A2A2A;
+                            case GREEN -> 0x1E8040;
+                        }))
+                .toList();
+    }
+
+    @Override
+    public boolean rig(String optionId) {
+        if (optionId == null) {
+            rigged = null;
+            return true;
+        }
+        Optional<Pocket> pocket = game.wheel().pockets().stream()
+                .filter(candidate -> candidate.label().equals(optionId))
+                .findFirst();
+        pocket.ifPresent(found -> rigged = found);
+        return pocket.isPresent();
+    }
+
+    @Override
+    public Optional<String> rigged() {
+        return Optional.ofNullable(rigged).map(Pocket::label);
     }
 
     @Override

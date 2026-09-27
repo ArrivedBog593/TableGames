@@ -136,13 +136,105 @@ public class TableBlockEntity extends GameBlockEntity {
     }
 
     /**
-     * What the client is told on chunk load: only which game the table hosts.
+     * What every client near the table is told: which game it hosts, and
+     * whatever that game has for the room — the last throw of a wheel.
      * Round state travels per player, over the mod's own channel.
      */
     @Override
     public @NotNull CompoundTag getUpdateTag(HolderLookup.@NotNull Provider registries) {
         CompoundTag tag = new CompoundTag();
         tag.putString(KEY_GAME, gameId);
+        runtime().writeNews(tag);
         return tag;
+    }
+
+    // --- What the room hears -----------------------------------------------------------
+
+    /** When the last ball was thrown, in game ticks. */
+    public static final String KEY_WHEEL_AT = "wheel_at";
+
+    /** How many pockets it runs past on the strip. */
+    public static final String KEY_WHEEL_POCKETS = "wheel_pockets";
+
+    /** Whether that throw paid anybody anything. */
+    public static final String KEY_WHEEL_PAID = "wheel_paid";
+
+    /**
+     * Who is told when a wheel here is spun, on the client. Set once by the
+     * client's setup and never on a dedicated server — see
+     * {@link SlotMachineBlockEntity#listen} for why it is an interface.
+     */
+    private static WheelListener wheelListener = WheelListener.DEAF;
+
+    /**
+     * The newest throw this client has heard of, or -1 before it has heard
+     * anything. The first update only sets it: a player walking up to a
+     * table that was spun a minute ago should not hear it spin.
+     */
+    private long heardThrow = -1;
+
+    public static void listenToWheels(WheelListener listener) {
+        wheelListener = java.util.Objects.requireNonNull(listener, "listener");
+    }
+
+    @Override
+    public void onDataPacket(net.minecraft.network.@NotNull Connection connection,
+                             net.minecraft.network.protocol.game.@NotNull ClientboundBlockEntityDataPacket packet,
+                             HolderLookup.@NotNull Provider registries) {
+        super.onDataPacket(connection, packet, registries);
+        hear(packet.getTag());
+    }
+
+    @Override
+    public void handleUpdateTag(@NotNull CompoundTag tag, HolderLookup.@NotNull Provider registries) {
+        super.handleUpdateTag(tag, registries);
+        hear(tag);
+    }
+
+    private void hear(CompoundTag tag) {
+        if (!tag.contains(KEY_WHEEL_AT)) {
+            return;
+        }
+        long thrown = tag.getLong(KEY_WHEEL_AT);
+        // Newer only: a runtime rebuilt from nothing sends zero, and the same
+        // update sent again for some other reason sends the same time.
+        if (heardThrow >= 0 && thrown > heardThrow) {
+            wheelListener.wheelSpun(this, tag.getInt(KEY_WHEEL_POCKETS), tag.getBoolean(KEY_WHEEL_PAID));
+        }
+        heardThrow = Math.max(heardThrow, thrown);
+    }
+
+    @Override
+    public void setRemoved() {
+        super.setRemoved();
+        if (level != null && level.isClientSide) {
+            wheelListener.tableGone(this);
+        }
+    }
+
+    /** What the client does with a wheel's news. */
+    public interface WheelListener {
+
+        /** Nothing: a server, or a client that has not set up yet. */
+        WheelListener DEAF = new WheelListener() {
+            @Override
+            public void wheelSpun(TableBlockEntity table, int pockets, boolean paid) {
+            }
+
+            @Override
+            public void tableGone(TableBlockEntity table) {
+            }
+        };
+
+        /**
+         * A ball was thrown here, runs past this many pockets, and paid
+         * somebody or nobody. Told at the throw; the payout is only to be
+         * heard once the ball is down, or the chips would call the result
+         * over the top of the wheel.
+         */
+        void wheelSpun(TableBlockEntity table, int pockets, boolean paid);
+
+        /** The table is gone: broken, or its chunk unloaded. */
+        void tableGone(TableBlockEntity table);
     }
 }

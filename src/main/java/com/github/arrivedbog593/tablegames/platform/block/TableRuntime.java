@@ -4,9 +4,12 @@ import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteGame;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotsGame;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.MinecraftServer;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -78,6 +81,42 @@ public interface TableRuntime {
 
     /** What one viewer is allowed to see, or null when there is nothing to show. */
     CustomPacketPayload stateFor(MinecraftServer server, UUID viewer);
+
+    /**
+     * The results a test table running this game can be told to land on
+     * next, best first; empty for a game that offers none.
+     * <p>
+     * Offering them is all a game does. Whether a block may be told to use
+     * one is decided elsewhere — only a test table, only in a development
+     * build — and a game applies one only on a test table even when told to.
+     */
+    default List<RigOption> rigOptions() {
+        return List.of();
+    }
+
+    /**
+     * Makes the next round land on this option, or lets it fall freely again
+     * when given null. Good for one round only: the one after is random.
+     *
+     * @return false when this game offers no such option
+     */
+    default boolean rig(String optionId) {
+        return optionId == null;
+    }
+
+    /** The option the next round has been told to land on, if any. */
+    default Optional<String> rigged() {
+        return Optional.empty();
+    }
+
+    /**
+     * What every client near the block is told, whether or not it has the
+     * game open: enough for the block to be heard, and nothing a spectator
+     * could not already see. Written into the block's update, so it reaches
+     * whoever is in range when the block announces it.
+     */
+    default void writeNews(CompoundTag tag) {
+    }
 
     /** A table hosting nothing: no round, nothing at stake, nothing to show. */
     final class IdleRuntime implements TableRuntime {

@@ -7,6 +7,7 @@ import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteWheel;
 import com.github.arrivedbog593.tablegames.platform.network.PlayerFunds;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteActionPayload;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
+import com.github.arrivedbog593.tablegames.platform.block.WheelMotion;
 import com.github.arrivedbog593.tablegames.platform.network.TableActionPayload;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
@@ -52,11 +53,13 @@ public class RouletteScreen extends TableScreen {
     /** The felt itself, which kept its original width when the panel grew. */
     private static final int FELT_W = 262;
 
-    /** How long the reel is in motion, and how long the winner then sits lit. */
-    private static final long SPIN_MILLIS = 2600;
-    private static final long SETTLE_MILLIS = 2600;
-    /** Times round the cylinder before settling. */
-    private static final int TURNS = 3;
+    /**
+     * How long the reel is in motion — {@link WheelMotion}'s, so the table's
+     * sound runs down with it — and how long the winner then sits lit. The
+     * two together stay inside the six seconds the server holds a result.
+     */
+    private static final long SPIN_MILLIS = WheelMotion.SPIN_MILLIS;
+    private static final long SETTLE_MILLIS = 2200;
     private static final int REEL_W = 216;
     private static final int REEL_H = 26;
     private static final int CELL_W = 24;
@@ -322,8 +325,12 @@ public class RouletteScreen extends TableScreen {
         // super.render puts down here came back up through the prompt's
         // dimming and sat beside its buttons looking like part of it — and a
         // field nobody can see should not take clicks either.
+        // The same goes for the blackout the strip draws while the wheel
+        // turns: the field's text came up through it at full brightness,
+        // the one live-looking thing on a table that is not taking bets.
+        boolean covered = prompt != null || isWheelShowing();
         if (customAmount != null) {
-            customAmount.visible = prompt == null;
+            customAmount.visible = !covered;
         }
         super.render(graphics, mouseX, mouseY, partialTick);
 
@@ -340,7 +347,7 @@ public class RouletteScreen extends TableScreen {
         // its own background rather than under it.
         // Not while the prompt is up: its text drew through the dimming and
         // read as part of the prompt.
-        if (customAmount != null && prompt == null) {
+        if (customAmount != null && !covered) {
             customAmount.render(graphics, mouseX, mouseY, partialTick);
         }
         if (prompt == null) {
@@ -420,10 +427,11 @@ public class RouletteScreen extends TableScreen {
         int windowLeft = centerX - width / 2;
         drawRecess(graphics, windowLeft - 1, windowTop - 1, width + 2, REEL_H + 2);
 
-        double progress = Math.min(1.0, elapsed / (double) SPIN_MILLIS);
-        // Ease-out rather than linear: a strip that stops dead reads as a bug.
-        double eased = 1 - Math.pow(1 - progress, 3);
-        double traveled = eased * (TURNS * ring.size() + landed) * CELL_W;
+        // Fast off the hand and only ever slowing, with the last few pockets
+        // rolled past slowly enough to read: see WheelMotion for why.
+        boolean done = !WheelMotion.running(elapsed);
+        double traveled = WheelMotion.pocketsAt(elapsed,
+                WheelMotion.pocketsToPass(landed, ring.size())) * CELL_W;
 
         int firstIndex = (int) Math.floor(traveled / CELL_W);
         double frac = traveled - firstIndex * CELL_W;
@@ -434,7 +442,7 @@ public class RouletteScreen extends TableScreen {
             int index = Math.floorMod(firstIndex + k, ring.size());
             Pocket pocket = ring.get(index);
             int x = centerX - CELL_W / 2 + k * CELL_W - (int) Math.round(frac);
-            boolean isWinner = index == landed && progress >= 1.0;
+            boolean isWinner = index == landed && done;
 
             graphics.fill(x + 1, windowTop + CELL_PAD, x + CELL_W - 1,
                     windowTop + REEL_H - CELL_PAD,
@@ -451,6 +459,12 @@ public class RouletteScreen extends TableScreen {
         graphics.fill(centerX - 1, windowTop - 5, centerX + 1, windowTop - 1, 0xFFFFE066);
         graphics.fill(centerX - 1, windowTop + REEL_H + 1, centerX + 1,
                 windowTop + REEL_H + 5, 0xFFFFE066);
+    }
+
+    /** Whether the strip and its blackout are on screen, moving or settled. */
+    private static boolean isWheelShowing() {
+        long elapsed = ClientRouletteState.sinceResult();
+        return elapsed >= 0 && elapsed <= SPIN_MILLIS + SETTLE_MILLIS;
     }
 
     /** Whether the strip is still traveling toward its pocket. */

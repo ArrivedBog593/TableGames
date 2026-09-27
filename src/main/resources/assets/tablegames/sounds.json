@@ -1,0 +1,43 @@
+{
+  "slot.tick": {
+    "subtitle": "subtitles.tablegames.slot.tick",
+    "sounds": ["tablegames:slot/tick"]
+  },
+  "slot.reel_stop": {
+    "subtitle": "subtitles.tablegames.slot.reel_stop",
+    "sounds": ["tablegames:slot/reel_stop"]
+  },
+  "slot.win": {
+    "subtitle": "subtitles.tablegames.slot.win",
+    "sounds": ["tablegames:slot/win"]
+  },
+  "slot.big_win": {
+    "subtitle": "subtitles.tablegames.slot.big_win",
+    "sounds": ["tablegames:slot/big_win"]
+  },
+  "slot.free_spin": {
+    "subtitle": "subtitles.tablegames.slot.free_spin",
+    "sounds": ["tablegames:slot/free_spin"]
+  },
+  "slot.jackpot": {
+    "subtitle": "subtitles.tablegames.slot.jackpot",
+    "sounds": ["tablegames:slot/jackpot"]
+  },
+  "roulette.tick": {
+    "subtitle": "subtitles.tablegames.roulette.tick",
+    "sounds": ["tablegames:roulette/tick"]
+  },
+  "roulette.land": {
+    "subtitle": "subtitles.tablegames.roulette.land",
+    "sounds": ["tablegames:roulette/land"]
+  },
+  "roulette.chip": {
+    "subtitle": "subtitles.tablegames.roulette.chip",
+    "sounds": ["tablegames:roulette/chip_1", "tablegames:roulette/chip_2", "tablegames:roulette/chip_3"]
+  },
+  "roulette.payout": {
+    "subtitle": "subtitles.tablegames.roulette.payout",
+    "sounds": ["tablegames:roulette/payout_1", "tablegames:roulette/payout_2", "tablegames:roulette/payout_3",
+               "tablegames:roulette/payout_4", "tablegames:roulette/payout_5", "tablegames:roulette/payout_6"]
+  }
+}

@@ -1,5 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.registry;
 
+import com.github.arrivedbog593.tablegames.platform.item.TestKeyItem;
 import com.github.arrivedbog593.tablegames.TableGames;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -30,6 +31,12 @@ public final class ModCreativeTabs {
                         // Anyone administering without operator rights gets a
                         // bound one from the command instead.
                         output.accept(ModItems.ADMIN_KEY.get());
+                        // Only where it does anything. A release build still has the
+                        // item, so worlds made in development load, but offering it
+                        // in the tab would be offering a key that opens nothing.
+                        if (TestKeyItem.enabled()) {
+                            output.accept(ModItems.TEST_KEY.get());
+                        }
                     })
                     .build());
 

@@ -53,6 +53,9 @@ public final class RouletteSession extends GameSession {
 
     private Pocket result;
 
+    /** Where the ball is made to land, for a test table; null to let it fall. */
+    private Pocket rigged;
+
     public RouletteSession(List<Seat> seats, RandomGenerator random,
                            RouletteWheel wheel, BetLimits limits) {
         super(seats, random);
@@ -187,6 +190,22 @@ public final class RouletteSession extends GameSession {
     }
 
     /**
+     * Makes the ball land in this pocket instead of wherever it falls.
+     * <p>
+     * For testing a table's payouts and nothing else: every wager is settled
+     * by the same rules either way, so a straight-up on the forced number pays
+     * exactly what it would have if the number had come up on its own.
+     * Whether anything may call this is the platform's decision; the engine
+     * only makes it possible.
+     */
+    public void rig(Pocket pocket) {
+        if (!wheel.pockets().contains(pocket)) {
+            throw new IllegalArgumentException("This wheel has no pocket " + pocket.label());
+        }
+        this.rigged = pocket;
+    }
+
+    /**
      * Closes betting, spins the ball, and settles every wager.
      * <p>
      * Called by the platform layer when the betting window closes, either
@@ -198,7 +217,7 @@ public final class RouletteSession extends GameSession {
             throw new IllegalStateException("Cannot spin while " + state());
         }
         setState(GameState.IN_PROGRESS);
-        result = wheel.spin(random());
+        result = rigged != null ? rigged : wheel.spin(random());
 
         long staked = collectBets();
 

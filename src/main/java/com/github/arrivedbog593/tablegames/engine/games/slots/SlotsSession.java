@@ -27,6 +27,9 @@ public final class SlotsSession extends GameSession {
     private final SlotMachine machine;
     private SlotMachine.SpinResult result;
 
+    /** Where the reels are made to stop, for a test table; null to let them fall. */
+    private int[] rigged;
+
     public SlotsSession(List<Seat> seats, RandomGenerator random, SlotMachine machine) {
         super(seats, random);
         this.machine = Objects.requireNonNull(machine, "machine");
@@ -62,7 +65,9 @@ public final class SlotsSession extends GameSession {
         collectBets();
         takePot();
 
-        result = machine.spin(random(), spin.lines());
+        result = rigged != null
+                ? machine.resultAt(rigged, spin.lines())
+                : machine.spin(random(), spin.lines());
         long won = Math.multiplyExact(spin.perLine(), (long) result.totalMultiple());
         if (won > 0) {
             seat.award(won);
@@ -73,6 +78,29 @@ public final class SlotsSession extends GameSession {
                 0,
                 won > cost ? "tablegames.summary.slots.won" : "tablegames.summary.slots.lost"));
         return ActionResult.ok();
+    }
+
+    /**
+     * Makes the reels stop where they are told instead of where they fall.
+     * <p>
+     * For testing a machine's payouts and nothing else: the spin is settled
+     * by the same rules either way, which is the whole point of having it —
+     * a result forced here pays exactly what the same result would pay if it
+     * had come up on its own. Whether anything may call this is the
+     * platform's decision; the engine only makes it possible.
+     *
+     * @param stops one stop per reel, as {@link SlotMachine#resultAt} takes them
+     */
+    public void rig(int[] stops) {
+        if (stops.length != SlotMachine.REELS) {
+            throw new IllegalArgumentException("One stop per reel");
+        }
+        for (int reel = 0; reel < stops.length; reel++) {
+            if (stops[reel] < 0 || stops[reel] >= machine.reels().get(reel).size()) {
+                throw new IllegalArgumentException("No stop " + stops[reel] + " on reel " + reel);
+            }
+        }
+        this.rigged = stops.clone();
     }
 
     /** How the reels landed, once the spin has run. */
