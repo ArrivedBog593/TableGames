@@ -1,5 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
+import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetLimits;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetType;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.Pocket;
@@ -13,8 +14,7 @@ import com.github.arrivedbog593.tablegames.engine.session.Outcome;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
 import com.github.arrivedbog593.tablegames.engine.table.BettingWindow;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
-import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
+import com.github.arrivedbog593.tablegames.platform.house.OutcomeSettler;
 import com.github.arrivedbog593.tablegames.platform.network.RouletteStatePayload;
 import com.github.arrivedbog593.tablegames.platform.registry.ModSounds;
 import com.mojang.logging.LogUtils;

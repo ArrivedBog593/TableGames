@@ -1,5 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
+import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetLimits;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetType;
@@ -12,7 +13,6 @@ import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.block.RouletteTable;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.CommandDispatcher;

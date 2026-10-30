@@ -1,5 +1,6 @@
 package com.github.arrivedbog593.tablegames.client;
 
+import com.github.arrivedbog593.tablegames.economy.client.Panels;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.github.arrivedbog593.tablegames.platform.network.ChooseGamePayload;

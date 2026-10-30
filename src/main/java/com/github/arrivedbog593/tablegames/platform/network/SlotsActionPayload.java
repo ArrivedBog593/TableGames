@@ -3,7 +3,6 @@ package com.github.arrivedbog593.tablegames.platform.network;
 import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.platform.block.SlotCabinet;
 import com.github.arrivedbog593.tablegames.platform.block.SlotMachineBlockEntity;
-import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -106,7 +105,7 @@ public record SlotsActionPayload(int kind, BlockPos machinePos, int lines, long 
                 default -> null;
             };
             if (refusal != null) {
-                player.sendSystemMessage(refusal.copy().withStyle(ChatFormatting.RED));
+                TableNoticePayload.tell(player, refusal);
                 return;
             }
             machine.markDirty();

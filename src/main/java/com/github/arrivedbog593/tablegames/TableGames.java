@@ -1,11 +1,12 @@
 package com.github.arrivedbog593.tablegames;
 
+import com.github.arrivedbog593.tablegames.economy.platform.EconomyModule;
+import com.github.arrivedbog593.tablegames.engine.house.HouseTransactions;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlockEntities;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlocks;
 import com.github.arrivedbog593.tablegames.platform.registry.ModCreativeTabs;
 import com.github.arrivedbog593.tablegames.platform.registry.ModItems;
-import com.github.arrivedbog593.tablegames.platform.registry.ModMenus;
 import com.github.arrivedbog593.tablegames.platform.registry.ModSounds;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -15,7 +16,7 @@ import net.neoforged.fml.common.Mod;
  * Mod entry point.
  * <p>
  * Deliberately thin. Lifecycle wiring lives with the systems it belongs to —
- * see {@code platform.economy.EconomyEvents} and
+ * see {@code platform.house.HouseEvents} and
  * {@code platform.network.ModPayloads} — so this class does not grow into a
  * dumping ground as games are added.
  */
@@ -30,15 +31,20 @@ public final class TableGames {
 
     @SuppressWarnings("unused")
     public TableGames(IEventBus modEventBus, ModContainer container) {
+        // The economy first, standing in for the mod it will become: TableGames
+        // depends on it, so it is there before anything here is.
+        EconomyModule.register(modEventBus);
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
         ModBlockEntities.register(modEventBus);
-        ModMenus.register(modEventBus);
         ModCreativeTabs.register(modEventBus);
         ModSounds.register(modEventBus);
 
         // Games are plain Java and need no registry event, but they must exist
         // before any table tries to resolve its saved game id.
         Games.bootstrap();
+        // Before the server starts: crash recovery reads the log then, and a
+        // wager nobody had registered yet would not be replayed.
+        HouseTransactions.bootstrap();
     }
 }

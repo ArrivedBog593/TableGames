@@ -1,8 +1,9 @@
 package com.github.arrivedbog593.tablegames.client;
 
+import com.github.arrivedbog593.tablegames.economy.client.Panels;
+import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
-import com.github.arrivedbog593.tablegames.platform.economy.BuyInMessages;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
+import com.github.arrivedbog593.tablegames.platform.house.BuyInMessages;
 import com.github.arrivedbog593.tablegames.platform.network.PlayerFunds;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;

@@ -1,5 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
+import com.github.arrivedbog593.tablegames.economy.platform.command.Pagination;
+import com.github.arrivedbog593.tablegames.platform.house.HouseStaff;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -12,6 +14,7 @@ import net.minecraft.network.chat.HoverEvent;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * A directory of the mod's commands.
@@ -34,10 +37,14 @@ public final class HelpCommands {
      *
      * @param usage      what to type, arguments and all
      * @param key        translation key for the one-line explanation
-     * @param operatorOnly whether it is hidden from ordinary players
+     * @param visibleTo  who is shown it: whoever could run it
      */
-    private record Entry(String usage, String key, boolean operatorOnly) {
+    private record Entry(String usage, String key, Predicate<CommandSourceStack> visibleTo) {
     }
+
+    private static final Predicate<CommandSourceStack> EVERYONE = source -> true;
+    private static final Predicate<CommandSourceStack> OPERATORS = source -> source.hasPermission(2);
+    private static final Predicate<CommandSourceStack> HOUSE = HouseStaff::mayRunTheHouse;
 
     /**
      * Grouped the way the commands are, and in the order somebody meets them:
@@ -45,58 +52,58 @@ public final class HelpCommands {
      * casino.
      */
     private static final List<Entry> ENTRIES = List.of(
-            new Entry("/credits", "tablegames.help.credits", false),
-            new Entry("/credits convert", "tablegames.help.credits_convert", false),
-            new Entry("/credits redeem <item> [count]", "tablegames.help.credits_redeem", false),
-            new Entry("/credits pay <player> <amount>", "tablegames.help.credits_pay", false),
-            new Entry("/credits give <player> <amount>", "tablegames.help.credits_give", true),
-            new Entry("/credits set <player> <amount>", "tablegames.help.credits_set", true),
-            new Entry("/credits house", "tablegames.help.credits_house", true),
+            new Entry("/credits", "tablegames.help.credits", EVERYONE),
+            new Entry("/credits convert", "tablegames.help.credits_convert", EVERYONE),
+            new Entry("/credits redeem <item> [count]", "tablegames.help.credits_redeem", EVERYONE),
+            new Entry("/credits pay <player> <amount>", "tablegames.help.credits_pay", EVERYONE),
+            new Entry("/credits give <player> <amount>", "tablegames.help.credits_give", OPERATORS),
+            new Entry("/credits set <player> <amount>", "tablegames.help.credits_set", OPERATORS),
+            new Entry("/credits house", "tablegames.help.credits_house", OPERATORS),
 
-            new Entry("/tablegames table info", "tablegames.help.table_info", false),
-            new Entry("/tablegames table games", "tablegames.help.table_games", false),
-            new Entry("/tablegames table set <game>", "tablegames.help.table_set", false),
-            new Entry("/tablegames table clear", "tablegames.help.table_clear", false),
+            new Entry("/tablegames table info", "tablegames.help.table_info", EVERYONE),
+            new Entry("/tablegames table games", "tablegames.help.table_games", EVERYONE),
+            new Entry("/tablegames table set <game>", "tablegames.help.table_set", EVERYONE),
+            new Entry("/tablegames table clear", "tablegames.help.table_clear", EVERYONE),
             new Entry("/tablegames table limits inside <min> <max>",
-                    "tablegames.help.table_limits_inside", false),
+                    "tablegames.help.table_limits_inside", EVERYONE),
             new Entry("/tablegames table limits outside <min> <max>",
-                    "tablegames.help.table_limits_outside", false),
+                    "tablegames.help.table_limits_outside", EVERYONE),
             new Entry("/tablegames table limits clear",
-                    "tablegames.help.table_limits_clear", false),
-            new Entry("/tablegames table trusted", "tablegames.help.table_trusted", false),
-            new Entry("/tablegames table trust <player>", "tablegames.help.table_trust", false),
+                    "tablegames.help.table_limits_clear", EVERYONE),
+            new Entry("/tablegames table trusted", "tablegames.help.table_trusted", EVERYONE),
+            new Entry("/tablegames table trust <player>", "tablegames.help.table_trust", EVERYONE),
             new Entry("/tablegames table untrust <player>",
-                    "tablegames.help.table_untrust", false),
+                    "tablegames.help.table_untrust", EVERYONE),
 
-            new Entry("/tablegames house", "tablegames.help.house", true),
-            new Entry("/tablegames house add <amount>", "tablegames.help.house_add", true),
-            new Entry("/tablegames house take <amount>", "tablegames.help.house_take", true),
-            new Entry("/tablegames house set <amount>", "tablegames.help.house_set", true),
-            new Entry("/tablegames house exposure <percent>",
-                    "tablegames.help.house_exposure", true),
-            new Entry("/tablegames house reserve <credits>",
-                    "tablegames.help.house_reserve", true),
-            new Entry("/tablegames house spread <percent>", "tablegames.help.house_spread", true),
-            new Entry("/tablegames house plan <maxbet>", "tablegames.help.house_plan", true),
+            new Entry("/tablegames house", "tablegames.help.house", HOUSE),
+            new Entry("/tablegames house add <amount>", "tablegames.help.house_add", HOUSE),
+            new Entry("/tablegames house take <amount>", "tablegames.help.house_take", HOUSE),
+            new Entry("/tablegames house set <amount>", "tablegames.help.house_set", HOUSE),
+            new Entry("/tablegames house exposure [percent]",
+                    "tablegames.help.house_exposure", HOUSE),
+            new Entry("/tablegames house reserve [credits]",
+                    "tablegames.help.house_reserve", HOUSE),
+            new Entry("/tablegames house spread [percent]", "tablegames.help.house_spread", HOUSE),
+            new Entry("/tablegames house plan <maxbet>", "tablegames.help.house_plan", HOUSE),
 
-            new Entry("/tablegames economy list [page]", "tablegames.help.economy_list", true),
-            new Entry("/tablegames economy set <credits>", "tablegames.help.economy_set", true),
+            new Entry("/tablegames economy list [page]", "tablegames.help.economy_list", OPERATORS),
+            new Entry("/tablegames economy set <credits>", "tablegames.help.economy_set", OPERATORS),
             new Entry("/tablegames economy remove <item>",
-                    "tablegames.help.economy_remove", true),
-            new Entry("/tablegames economy check", "tablegames.help.economy_check", true),
+                    "tablegames.help.economy_remove", OPERATORS),
+            new Entry("/tablegames economy check", "tablegames.help.economy_check", OPERATORS),
 
-            new Entry("/tablegames shop list [page]", "tablegames.help.shop_list", true),
-            new Entry("/tablegames shop add <price>", "tablegames.help.shop_add", true),
-            new Entry("/tablegames shop price <entry> <price>", "tablegames.help.shop_price", true),
-            new Entry("/tablegames shop remove <entry>", "tablegames.help.shop_remove", true),
+            new Entry("/tablegames shop list [page]", "tablegames.help.shop_list", OPERATORS),
+            new Entry("/tablegames shop add <price>", "tablegames.help.shop_add", OPERATORS),
+            new Entry("/tablegames shop price <entry> <price>", "tablegames.help.shop_price", OPERATORS),
+            new Entry("/tablegames shop remove <entry>", "tablegames.help.shop_remove", OPERATORS),
 
-            new Entry("/tablegames staff key", "tablegames.help.staff_key", false),
-            new Entry("/tablegames staff list", "tablegames.help.staff_list", true),
+            new Entry("/tablegames staff key", "tablegames.help.staff_key", EVERYONE),
+            new Entry("/tablegames staff list", "tablegames.help.staff_list", OPERATORS),
             new Entry("/tablegames staff add <player> moderator",
-                    "tablegames.help.staff_add_moderator", true),
+                    "tablegames.help.staff_add_moderator", OPERATORS),
             new Entry("/tablegames staff add <player> admin",
-                    "tablegames.help.staff_add_admin", true),
-            new Entry("/tablegames staff remove <player>", "tablegames.help.staff_remove", true));
+                    "tablegames.help.staff_add_admin", OPERATORS),
+            new Entry("/tablegames staff remove <player>", "tablegames.help.staff_remove", OPERATORS));
 
     private HelpCommands() {
     }
@@ -122,7 +129,7 @@ public final class HelpCommands {
         // that the directory lies.
         List<Entry> visible = new ArrayList<>();
         for (Entry entry : ENTRIES) {
-            if (!entry.operatorOnly() || source.hasPermission(2)) {
+            if (entry.visibleTo().test(source)) {
                 visible.add(entry);
             }
         }

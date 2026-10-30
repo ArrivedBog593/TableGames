@@ -1,8 +1,9 @@
 package com.github.arrivedbog593.tablegames.client;
 
-import com.github.arrivedbog593.tablegames.engine.economy.CreditAccount;
+import com.github.arrivedbog593.tablegames.economy.client.Panels;
+import com.github.arrivedbog593.tablegames.economy.engine.CreditAccount;
+import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.block.RigOption;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.network.OpenTestPanelPayload;
 import com.github.arrivedbog593.tablegames.platform.network.TestPanelPayload;
 import net.minecraft.client.Minecraft;

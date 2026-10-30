@@ -122,8 +122,8 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
      */
     private static void clear(ServerPlayer player, RouletteTable table) {
         if (!table.clearBets(player.getUUID()) && !table.isBettingOpen()) {
-            player.displayClientMessage(
-                    Component.translatable("tablegames.roulette.betting_closed"), true);
+            TableNoticePayload.tell(player,
+                    Component.translatable("tablegames.roulette.betting_closed"));
         }
     }
 
@@ -150,9 +150,7 @@ public record RouletteActionPayload(int kind, BlockPos tablePos, int betType,
         }
 
         Component refusal = table.placeBet(player, bet);
-        if (refusal != null) {
-            player.displayClientMessage(refusal, true);
-        }
+        TableNoticePayload.tell(player, refusal);
     }
 
     /** Rebuilds the named pocket, with the color the wheel actually gives it. */

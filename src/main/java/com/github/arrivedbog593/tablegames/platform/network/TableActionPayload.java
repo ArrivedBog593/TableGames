@@ -91,9 +91,7 @@ public record TableActionPayload(int kind, BlockPos tablePos, long amount)
 
     /** Tells the player why a request was turned down, if it was. */
     private static void refuse(ServerPlayer player, Component refusal) {
-        if (refusal != null) {
-            player.sendSystemMessage(refusal);
-        }
+        TableNoticePayload.tell(player, refusal);
     }
 
     /**
@@ -104,7 +102,7 @@ public record TableActionPayload(int kind, BlockPos tablePos, long amount)
      */
     private static void report(ServerPlayer player, SeatChange change) {
         if (!change.changed()) {
-            player.sendSystemMessage(Component.translatable(change.translationKey()));
+            TableNoticePayload.tell(player, Component.translatable(change.translationKey()));
         }
     }
 }

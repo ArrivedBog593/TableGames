@@ -10,11 +10,11 @@ import com.github.arrivedbog593.tablegames.engine.table.TableAccess;
 import com.github.arrivedbog593.tablegames.engine.table.TableOccupancy;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 import com.github.arrivedbog593.tablegames.engine.table.TableStacks;
-import com.github.arrivedbog593.tablegames.platform.economy.BuyInMessages;
-import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
-import com.github.arrivedbog593.tablegames.platform.economy.RealFunds;
-import com.github.arrivedbog593.tablegames.platform.economy.SandboxFunds;
-import com.github.arrivedbog593.tablegames.platform.economy.TableFunds;
+import com.github.arrivedbog593.tablegames.platform.house.BuyInMessages;
+import com.github.arrivedbog593.tablegames.platform.house.HouseStaff;
+import com.github.arrivedbog593.tablegames.platform.house.RealFunds;
+import com.github.arrivedbog593.tablegames.platform.house.SandboxFunds;
+import com.github.arrivedbog593.tablegames.platform.house.TableFunds;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -379,7 +379,7 @@ public abstract class GameBlockEntity extends BlockEntity {
      */
     private static boolean hasAuthorityOverTables(ServerPlayer player) {
         return player.hasPermissions(2)
-                || EconomyData.get(player.server).managesEveryTable(player.getUUID());
+                || HouseStaff.isAdmin(player);
     }
 
     // --- Who is at the table ---------------------------------------------------

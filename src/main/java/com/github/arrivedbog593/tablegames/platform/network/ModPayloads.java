@@ -16,7 +16,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = TableGames.MOD_ID)
 public final class ModPayloads {
 
-    private static final String VERSION = "14";
+    private static final String VERSION = "16";
 
     private ModPayloads() {
     }
@@ -24,16 +24,6 @@ public final class ModPayloads {
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(VERSION);
-
-        registrar.playToClient(
-                CashierCatalogPayload.TYPE,
-                CashierCatalogPayload.STREAM_CODEC,
-                CashierCatalogPayload::handleOnClient);
-
-        registrar.playToClient(
-                ShopCatalogPayload.TYPE,
-                ShopCatalogPayload.STREAM_CODEC,
-                ShopCatalogPayload::handleOnClient);
 
         registrar.playToClient(
                 OpenTableScreenPayload.TYPE,
@@ -65,6 +55,11 @@ public final class ModPayloads {
                 OpenTestPanelPayload.STREAM_CODEC,
                 OpenTestPanelPayload::handleOnClient);
 
+        registrar.playToClient(
+                TableNoticePayload.TYPE,
+                TableNoticePayload.STREAM_CODEC,
+                TableNoticePayload::handleOnClient);
+
         registrar.playToServer(
                 RouletteActionPayload.TYPE,
                 RouletteActionPayload.STREAM_CODEC,
@@ -74,36 +69,6 @@ public final class ModPayloads {
                 SlotsActionPayload.TYPE,
                 SlotsActionPayload.STREAM_CODEC,
                 SlotsActionPayload::handleOnServer);
-
-        registrar.playToServer(
-                ShopPurchasePayload.TYPE,
-                ShopPurchasePayload.STREAM_CODEC,
-                ShopPurchasePayload::handleOnServer);
-
-        registrar.playToServer(
-                CashierRedeemPayload.TYPE,
-                CashierRedeemPayload.STREAM_CODEC,
-                CashierRedeemPayload::handleOnServer);
-
-        registrar.playToServer(
-                CashierConvertPayload.TYPE,
-                CashierConvertPayload.STREAM_CODEC,
-                CashierConvertPayload::handleOnServer);
-
-        registrar.playToServer(
-                AdminShopActionPayload.TYPE,
-                AdminShopActionPayload.STREAM_CODEC,
-                AdminShopActionPayload::handleOnServer);
-
-        registrar.playToServer(
-                AdminCashierActionPayload.TYPE,
-                AdminCashierActionPayload.STREAM_CODEC,
-                AdminCashierActionPayload::handleOnServer);
-
-        registrar.playToServer(
-                AdminCashierBatchPayload.TYPE,
-                AdminCashierBatchPayload.STREAM_CODEC,
-                AdminCashierBatchPayload::handleOnServer);
 
         registrar.playToServer(
                 TableActionPayload.TYPE,

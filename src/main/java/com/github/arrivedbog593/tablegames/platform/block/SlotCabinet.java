@@ -1,5 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
+import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.engine.games.slots.Payline;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotAction;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotMachine;
@@ -11,8 +12,7 @@ import com.github.arrivedbog593.tablegames.engine.session.ActionResult;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
-import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
+import com.github.arrivedbog593.tablegames.platform.house.OutcomeSettler;
 import com.github.arrivedbog593.tablegames.platform.network.SlotsStatePayload;
 import com.mojang.logging.LogUtils;
 import net.minecraft.network.chat.Component;
@@ -319,6 +319,15 @@ public final class SlotCabinet implements TableRuntime {
             return Component.translatable("tablegames.table.round_failed");
         }
         MinecraftServer server = level.getServer();
+
+        // Below its reserve the house takes no new bets, here the same as at
+        // the roulette. An owed free spin is not a new bet: it was paid for
+        // by the spin that won it, so it is given even with the house closed.
+        // Whether the house can cover what it pays is still checked when it
+        // settles, as for every spin.
+        if (!owed && !block.funds().canOpen(server, game)) {
+            return Component.translatable("tablegames.slots.house_closed");
+        }
 
         // What this pull could cost the house at worst: every line hitting
         // the machine's best combination at once. Counted by the engine over

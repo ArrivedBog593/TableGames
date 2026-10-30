@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.engine.games.slots;
 
-import com.github.arrivedbog593.tablegames.engine.economy.CreditAccount;
+import com.github.arrivedbog593.tablegames.economy.engine.CreditAccount;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.session.GameSession;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;

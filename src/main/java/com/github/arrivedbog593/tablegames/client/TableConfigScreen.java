@@ -1,9 +1,10 @@
 package com.github.arrivedbog593.tablegames.client;
 
+import com.github.arrivedbog593.tablegames.economy.client.Panels;
+import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
 import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.github.arrivedbog593.tablegames.platform.network.ChooseGamePayload;
 import com.github.arrivedbog593.tablegames.platform.network.OpenTableConfigPayload;

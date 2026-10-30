@@ -1,7 +1,8 @@
 package com.github.arrivedbog593.tablegames.platform.registry;
 
-import com.github.arrivedbog593.tablegames.platform.item.TestKeyItem;
 import com.github.arrivedbog593.tablegames.TableGames;
+import com.github.arrivedbog593.tablegames.economy.platform.registry.EconomyItems;
+import com.github.arrivedbog593.tablegames.platform.item.TestKeyItem;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
@@ -23,14 +24,14 @@ public final class ModCreativeTabs {
                     .icon(() -> new ItemStack(ModItems.TABLE.get()))
                     .displayItems((parameters, output) -> {
                         output.accept(ModItems.TABLE.get());
-                        output.accept(ModItems.CASHIER.get());
-                        output.accept(ModItems.SHOP.get());
+                        output.accept(EconomyItems.CASHIER.get());
+                        output.accept(EconomyItems.SHOP.get());
                         output.accept(ModItems.SLOT_MACHINE.get());
                         output.accept(ModItems.TABLE_KEY.get());
                         // Unbound, so it works for operators and nobody else.
                         // Anyone administering without operator rights gets a
                         // bound one from the command instead.
-                        output.accept(ModItems.ADMIN_KEY.get());
+                        output.accept(EconomyItems.ADMIN_KEY.get());
                         // Only where it does anything. A release build still has the
                         // item, so worlds made in development load, but offering it
                         // in the tab would be offering a key that opens nothing.

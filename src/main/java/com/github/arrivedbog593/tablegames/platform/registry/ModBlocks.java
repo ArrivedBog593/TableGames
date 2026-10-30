@@ -1,8 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.registry;
 
 import com.github.arrivedbog593.tablegames.TableGames;
-import com.github.arrivedbog593.tablegames.platform.block.CashierBlock;
-import com.github.arrivedbog593.tablegames.platform.block.ShopBlock;
 import com.github.arrivedbog593.tablegames.platform.block.SlotMachineBlock;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlock;
 import net.minecraft.world.level.block.Block;
@@ -46,27 +44,6 @@ public final class ModBlocks {
                     .sound(SoundType.WOOD)
                     .noOcclusion());
 
-    /** Exchanges items for credits and back, at the same rate both ways. */
-    public static final DeferredBlock<CashierBlock> CASHIER = BLOCKS.registerBlock(
-            "cashier",
-            CashierBlock::new,
-            BlockBehaviour.Properties.of()
-                    .mapColor(MapColor.GOLD)
-                    .strength(3.5F, 9.0F)
-                    .sound(SoundType.METAL)
-                    .requiresCorrectToolForDrops());
-
-    /** Sells goods for credits and never buys them back. */
-    public static final DeferredBlock<ShopBlock> SHOP = BLOCKS.registerBlock(
-            "shop",
-            ShopBlock::new,
-            BlockBehaviour.Properties.of()
-                    .mapColor(MapColor.TERRACOTTA_CYAN)
-                    .strength(3.5F, 9.0F)
-                    .sound(SoundType.METAL)
-                    .requiresCorrectToolForDrops());
-
-
     /**
      * A slot machine: one game, one seat, its own cabinet.
      * <p>
@@ -93,14 +70,6 @@ public final class ModBlocks {
 
     public static Block table() {
         return TABLE.get();
-    }
-
-    public static Block cashier() {
-        return CASHIER.get();
-    }
-
-    public static Block shop() {
-        return SHOP.get();
     }
 
     public static Block slotMachine() {

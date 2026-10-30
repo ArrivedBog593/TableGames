@@ -1,15 +1,17 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
-import com.github.arrivedbog593.tablegames.engine.economy.CreditAccount;
-import com.github.arrivedbog593.tablegames.engine.economy.CreditValueTable;
-import com.github.arrivedbog593.tablegames.engine.economy.HouseBankroll;
-import com.github.arrivedbog593.tablegames.engine.economy.HouseExposure;
-import com.github.arrivedbog593.tablegames.engine.economy.TransactionType;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditFormat;
-import com.github.arrivedbog593.tablegames.platform.economy.CreditStorage;
-import com.github.arrivedbog593.tablegames.platform.economy.EconomyData;
-import com.github.arrivedbog593.tablegames.platform.economy.EconomyEvents;
-import com.github.arrivedbog593.tablegames.platform.economy.OutcomeSettler;
+import com.github.arrivedbog593.tablegames.economy.engine.CreditAccount;
+import com.github.arrivedbog593.tablegames.economy.engine.CreditValueTable;
+import com.github.arrivedbog593.tablegames.economy.engine.TransactionType;
+import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
+import com.github.arrivedbog593.tablegames.economy.platform.CreditStorage;
+import com.github.arrivedbog593.tablegames.economy.platform.EconomyData;
+import com.github.arrivedbog593.tablegames.economy.platform.EconomyEvents;
+import com.github.arrivedbog593.tablegames.engine.house.HouseBankroll;
+import com.github.arrivedbog593.tablegames.engine.house.HouseExposure;
+import com.github.arrivedbog593.tablegames.platform.house.HouseSettings;
+import com.github.arrivedbog593.tablegames.platform.house.HouseStaff;
+import com.github.arrivedbog593.tablegames.platform.house.OutcomeSettler;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
@@ -19,6 +21,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 
 /**
  * Managing the casino's bankroll.
@@ -45,7 +48,7 @@ public final class HouseCommands {
         LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("tablegames");
 
         root.then(Commands.literal("house")
-                .requires(source -> source.hasPermission(2))
+                .requires(HouseStaff::mayRunTheHouse)
                 .executes(context -> status(context.getSource()))
                 .then(Commands.literal("add")
                         .then(Commands.argument("amount",
@@ -63,15 +66,18 @@ public final class HouseCommands {
                                 .executes(context -> set(context.getSource(),
                                         LongArgumentType.getLong(context, "amount")))))
                 .then(Commands.literal("exposure")
+                        .executes(context -> showExposure(context.getSource()))
                         .then(Commands.argument("percent", IntegerArgumentType.integer(1, 100))
                                 .executes(context -> exposure(context.getSource(),
                                         IntegerArgumentType.getInteger(context, "percent")))))
                 .then(Commands.literal("reserve")
+                        .executes(context -> showReserve(context.getSource()))
                         .then(Commands.argument("credits",
                                         LongArgumentType.longArg(0, CreditAccount.MAX_BALANCE))
                                 .executes(context -> reserve(context.getSource(),
                                         LongArgumentType.getLong(context, "credits")))))
                 .then(Commands.literal("spread")
+                        .executes(context -> showSpread(context.getSource()))
                         .then(Commands.argument("percent", IntegerArgumentType.integer(
                                         CreditValueTable.NO_SPREAD,
                                         CreditValueTable.MAX_SPREAD_PERCENT))
@@ -94,7 +100,7 @@ public final class HouseCommands {
      */
     private static int status(CommandSourceStack source) {
         MinecraftServer server = source.getServer();
-        HouseBankroll bankroll = CreditStorage.get(server).bankroll(server);
+        HouseBankroll bankroll = OutcomeSettler.bankroll(server);
 
         ChatFormatting color = switch (bankroll.status()) {
             case HEALTHY -> ChatFormatting.GREEN;
@@ -113,8 +119,7 @@ public final class HouseCommands {
             // both would have somebody funding a bank that was about to
             // recover on its own.
             boolean owedMoreThanItHolds =
-                    bankroll.minimumReserve() > EconomyData.get(source.getServer())
-                            .minimumReserve();
+                    bankroll.minimumReserve() > HouseSettings.get(source.getServer()).minimumReserve();
             source.sendSuccess(() -> Component.translatable(owedMoreThanItHolds
                                     ? "tablegames.house.closed_committed"
                                     : "tablegames.house.closed",
@@ -160,9 +165,10 @@ public final class HouseCommands {
         storage.creditHouse(amount);
         EconomyEvents.recordHouse(storage, TransactionType.ADMIN_GIVE, amount,
                 storage.houseBalance(), "seeded by " + source.getTextName());
-        source.sendSuccess(() -> Component.translatable(
-                "tablegames.house.added", format(amount),
-                format(storage.houseBalance())), true);
+        announce(source, Component.translatable("tablegames.house.added",
+                        format(amount), format(storage.houseBalance())),
+                Component.translatable("tablegames.house.added_by", source.getDisplayName(),
+                        format(amount), format(storage.houseBalance())));
         return status(source);
     }
 
@@ -191,9 +197,10 @@ public final class HouseCommands {
         }
         EconomyEvents.recordHouse(storage, TransactionType.ADMIN_TAKE, -amount,
                 storage.houseBalance(), "withdrawn by " + source.getTextName());
-        source.sendSuccess(() -> Component.translatable(
-                "tablegames.house.taken", format(amount),
-                format(storage.houseBalance())), true);
+        announce(source, Component.translatable("tablegames.house.taken",
+                        format(amount), format(storage.houseBalance())),
+                Component.translatable("tablegames.house.taken_by", source.getDisplayName(),
+                        format(amount), format(storage.houseBalance())));
         return status(source);
     }
 
@@ -211,20 +218,59 @@ public final class HouseCommands {
                     delta > 0 ? TransactionType.ADMIN_GIVE : TransactionType.ADMIN_TAKE,
                     delta, storage.houseBalance(), "set by " + source.getTextName());
         }
+        announce(source, Component.translatable("tablegames.house.set", format(amount)),
+                Component.translatable("tablegames.house.set_by", source.getDisplayName(), format(amount)));
         return status(source);
     }
 
+    // --- The settings, read back ------------------------------------------------
+    //
+    // Each setting answers when it is typed without a value, instead of the
+    // command failing as incomplete: what it is now, what it is when nobody
+    // has set it, and how to change it. Somebody about to change a limit is
+    // the person who most needs to see the one in force.
+
+    private static int showExposure(CommandSourceStack source) {
+        int percent = HouseSettings.get(source.getServer()).exposurePercent();
+        long perPayout = OutcomeSettler.bankroll(source.getServer()).maximumExposure();
+        source.sendSuccess(() -> Component.translatable("tablegames.house.exposure_show",
+                percent, format(perPayout), HouseBankroll.DEFAULT_EXPOSURE_PERCENT), false);
+        return percent;
+    }
+
+    private static int showReserve(CommandSourceStack source) {
+        long configured = HouseSettings.get(source.getServer()).minimumReserve();
+        long effective = OutcomeSettler.bankroll(source.getServer()).minimumReserve();
+        source.sendSuccess(() -> Component.translatable("tablegames.house.reserve_show",
+                format(configured), format(HouseBankroll.DEFAULT_MINIMUM_RESERVE)), false);
+        // The floor is raised to whatever the tables have riding, so the figure
+        // that decides whether the house is open can be above the one typed.
+        if (effective > configured) {
+            source.sendSuccess(() -> Component.translatable("tablegames.house.reserve_raised",
+                    format(effective)), false);
+        }
+        return (int) Math.min(Integer.MAX_VALUE, configured);
+    }
+
+    private static int showSpread(CommandSourceStack source) {
+        int percent = EconomyData.get(source.getServer()).spreadPercent();
+        source.sendSuccess(() -> Component.translatable("tablegames.house.spread_show",
+                percent, CreditValueTable.NO_SPREAD), false);
+        return percent;
+    }
+
     private static int exposure(CommandSourceStack source, int percent) {
-        EconomyData.get(source.getServer()).setExposurePercent(percent);
-        source.sendSuccess(() -> Component.translatable(
-                "tablegames.house.exposure_set", percent), true);
+        HouseSettings.get(source.getServer()).setExposurePercent(percent);
+        announce(source, Component.translatable("tablegames.house.exposure_set", percent),
+                Component.translatable("tablegames.house.exposure_set_by", source.getDisplayName(), percent));
         return status(source);
     }
 
     private static int reserve(CommandSourceStack source, long credits) {
-        EconomyData.get(source.getServer()).setMinimumReserve(credits);
-        source.sendSuccess(() -> Component.translatable(
-                "tablegames.house.reserve_set", format(credits)), true);
+        HouseSettings.get(source.getServer()).setMinimumReserve(credits);
+        announce(source, Component.translatable("tablegames.house.reserve_set", format(credits)),
+                Component.translatable("tablegames.house.reserve_set_by", source.getDisplayName(),
+                        format(credits)));
         return status(source);
     }
 
@@ -237,7 +283,7 @@ public final class HouseCommands {
      */
     private static int plan(CommandSourceStack source, long desiredMaximumBet) {
         MinecraftServer server = source.getServer();
-        HouseBankroll bankroll = CreditStorage.get(server).bankroll(server);
+        HouseBankroll bankroll = OutcomeSettler.bankroll(server);
         long needed = bankroll.bankrollNeededFor(desiredMaximumBet, WORST_CASE_RATIO);
 
         source.sendSuccess(() -> Component.translatable(
@@ -266,10 +312,42 @@ public final class HouseCommands {
         EconomyData data = EconomyData.get(source.getServer());
         data.setSpreadPercent(percent);
         EconomyEvents.economy().rebuild(source.getServer());
-        source.sendSuccess(() -> percent == CreditValueTable.NO_SPREAD
-                ? Component.translatable("tablegames.house.spread_off")
-                : Component.translatable("tablegames.house.spread_set", percent), true);
+        boolean off = percent == CreditValueTable.NO_SPREAD;
+        announce(source, off
+                        ? Component.translatable("tablegames.house.spread_off")
+                        : Component.translatable("tablegames.house.spread_set", percent),
+                off
+                        ? Component.translatable("tablegames.house.spread_off_by", source.getDisplayName())
+                        : Component.translatable("tablegames.house.spread_set_by", source.getDisplayName(),
+                                percent));
         return 1;
+    }
+
+    /**
+     * Tells whoever changed the house what they did, and everyone else who
+     * runs it that it happened.
+     * <p>
+     * Not vanilla's admin broadcast. That one reaches operators only — a
+     * staff administrator who is not one would never hear that the bank they
+     * look after had been emptied — and it repeats the actor's own message
+     * back to them in brackets, "you added", to people who did not add
+     * anything. So the others get a line of their own, naming who did it.
+     * The server log gets the same line, so the change is on record even
+     * with nobody online to see it.
+     */
+    private static void announce(CommandSourceStack source, Component toActor, Component toOthers) {
+        source.sendSuccess(() -> toActor, false);
+        MinecraftServer server = source.getServer();
+        ServerPlayer actor = source.getPlayer();
+        Component notice = toOthers.copy().withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC);
+        for (ServerPlayer other : server.getPlayerList().getPlayers()) {
+            if (other != actor && HouseStaff.mayRunTheHouse(other.createCommandSourceStack())) {
+                other.sendSystemMessage(notice);
+            }
+        }
+        if (actor != null) {
+            server.sendSystemMessage(toOthers);
+        }
     }
 
     private static String format(long credits) {

@@ -1,8 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.registry;
 
 import com.github.arrivedbog593.tablegames.TableGames;
-import com.github.arrivedbog593.tablegames.platform.block.CashierBlockEntity;
-import com.github.arrivedbog593.tablegames.platform.block.ShopBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.block.SlotMachineBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.block.TableBlockEntity;
 import net.minecraft.core.registries.Registries;
@@ -20,16 +18,6 @@ public final class ModBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TableBlockEntity>> TABLE =
             BLOCK_ENTITIES.register("table", () -> BlockEntityType.Builder
                     .of(TableBlockEntity::new, ModBlocks.table())
-                    .build(null));
-
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CashierBlockEntity>> CASHIER =
-            BLOCK_ENTITIES.register("cashier", () -> BlockEntityType.Builder
-                    .of(CashierBlockEntity::new, ModBlocks.cashier())
-                    .build(null));
-
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<ShopBlockEntity>> SHOP =
-            BLOCK_ENTITIES.register("shop", () -> BlockEntityType.Builder
-                    .of(ShopBlockEntity::new, ModBlocks.shop())
                     .build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<SlotMachineBlockEntity>> SLOT_MACHINE =
