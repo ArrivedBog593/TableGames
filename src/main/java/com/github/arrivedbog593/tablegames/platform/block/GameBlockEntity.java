@@ -551,6 +551,11 @@ public abstract class GameBlockEntity extends BlockEntity {
         return occupancy.isPresent(playerId);
     }
 
+    /** Whether a seated player closed the screen and their absence clock is running. */
+    boolean isAway(UUID playerId) {
+        return occupancy.isAbsent(playerId);
+    }
+
     public OptionalInt seatIndexOf(UUID playerId) {
         return occupancy.seatIndexOf(playerId);
     }

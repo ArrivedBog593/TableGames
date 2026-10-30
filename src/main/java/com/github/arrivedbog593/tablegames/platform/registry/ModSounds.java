@@ -57,6 +57,15 @@ public final class ModSounds {
     /** Chips pushed across to whoever the number paid. */
     public static final DeferredHolder<SoundEvent, SoundEvent> ROULETTE_PAYOUT = register("roulette.payout", 14);
 
+    /** A card slid out of the shoe, face up or down. Once per card, so the deal is heard as a deal. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> BLACKJACK_CARD = register("blackjack.card", 10);
+
+    /** The dealer turning the hole card over. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> BLACKJACK_FLIP = register("blackjack.flip", 10);
+
+    /** A fresh shoe: the cut card came out last hand. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> BLACKJACK_SHUFFLE = register("blackjack.shuffle", 12);
+
     private ModSounds() {
     }
 

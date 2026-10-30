@@ -39,5 +39,18 @@
     "subtitle": "subtitles.tablegames.roulette.payout",
     "sounds": ["tablegames:roulette/payout_1", "tablegames:roulette/payout_2", "tablegames:roulette/payout_3",
                "tablegames:roulette/payout_4", "tablegames:roulette/payout_5", "tablegames:roulette/payout_6"]
+  },
+  "blackjack.card": {
+    "subtitle": "subtitles.tablegames.blackjack.card",
+    "sounds": ["tablegames:blackjack/card_1", "tablegames:blackjack/card_2", "tablegames:blackjack/card_3",
+               "tablegames:blackjack/card_4"]
+  },
+  "blackjack.flip": {
+    "subtitle": "subtitles.tablegames.blackjack.flip",
+    "sounds": ["tablegames:blackjack/flip_1", "tablegames:blackjack/flip_2"]
+  },
+  "blackjack.shuffle": {
+    "subtitle": "subtitles.tablegames.blackjack.shuffle",
+    "sounds": ["tablegames:blackjack/shuffle"]
   }
 }

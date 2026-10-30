@@ -69,6 +69,11 @@ public class TableBlockEntity extends GameBlockEntity {
         return runtime() instanceof RouletteTable wheel ? Optional.of(wheel) : Optional.empty();
     }
 
+    /** The live game when it is blackjack. */
+    public Optional<BlackjackTable> blackjack() {
+        return runtime() instanceof BlackjackTable cards ? Optional.of(cards) : Optional.empty();
+    }
+
     /**
      * Assigns a game, dropping any round in progress and standing everyone up.
      * <p>

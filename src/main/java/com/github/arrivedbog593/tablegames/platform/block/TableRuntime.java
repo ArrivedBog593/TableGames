@@ -1,6 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
 import com.github.arrivedbog593.tablegames.engine.game.Game;
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackGame;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteGame;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotsGame;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
@@ -35,6 +36,9 @@ public interface TableRuntime {
         }
         if (game instanceof SlotsGame slots) {
             return new SlotCabinet(table, slots);
+        }
+        if (game instanceof BlackjackGame blackjack) {
+            return new BlackjackTable(table, blackjack);
         }
         return IdleRuntime.INSTANCE;
     }

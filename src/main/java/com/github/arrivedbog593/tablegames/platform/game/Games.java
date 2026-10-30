@@ -2,6 +2,7 @@ package com.github.arrivedbog593.tablegames.platform.game;
 
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.game.GameRegistry;
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackGame;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteGame;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotsGame;
 import com.github.arrivedbog593.tablegames.platform.block.TableVariant;
@@ -48,6 +49,7 @@ public final class Games {
         }
         onTable(RouletteGame.european(), TableVariant.WHEEL);
         onTable(RouletteGame.american(), TableVariant.WHEEL);
+        onTable(BlackjackGame.standard(), TableVariant.CARDS);
         slots = inMachine(SlotsGame.standard());
         REGISTRY.freeze();
         ready = true;

@@ -16,7 +16,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 @EventBusSubscriber(modid = TableGames.MOD_ID)
 public final class ModPayloads {
 
-    private static final String VERSION = "16";
+    private static final String VERSION = "17";
 
     private ModPayloads() {
     }
@@ -51,6 +51,11 @@ public final class ModPayloads {
                 SlotsStatePayload::handleOnClient);
 
         registrar.playToClient(
+                BlackjackStatePayload.TYPE,
+                BlackjackStatePayload.STREAM_CODEC,
+                BlackjackStatePayload::handleOnClient);
+
+        registrar.playToClient(
                 OpenTestPanelPayload.TYPE,
                 OpenTestPanelPayload.STREAM_CODEC,
                 OpenTestPanelPayload::handleOnClient);
@@ -69,6 +74,11 @@ public final class ModPayloads {
                 SlotsActionPayload.TYPE,
                 SlotsActionPayload.STREAM_CODEC,
                 SlotsActionPayload::handleOnServer);
+
+        registrar.playToServer(
+                BlackjackActionPayload.TYPE,
+                BlackjackActionPayload.STREAM_CODEC,
+                BlackjackActionPayload::handleOnServer);
 
         registrar.playToServer(
                 TableActionPayload.TYPE,

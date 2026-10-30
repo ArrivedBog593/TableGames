@@ -1,5 +1,7 @@
 package com.github.arrivedbog593.tablegames.engine.game;
 
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackGame;
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackRig;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.RouletteGame;
 import com.github.arrivedbog593.tablegames.engine.games.slots.SlotsGame;
 import com.github.arrivedbog593.tablegames.engine.table.SettingSpec;
@@ -36,7 +38,8 @@ class SettingTranslationTest {
 
     /** Everything the engine can build, and so everything a table can post. */
     private static List<Game> everyGame() {
-        return List.of(RouletteGame.european(), RouletteGame.american(), SlotsGame.standard());
+        return List.of(RouletteGame.european(), RouletteGame.american(), SlotsGame.standard(),
+                BlackjackGame.standard());
     }
 
     @Test
@@ -83,7 +86,31 @@ class SettingTranslationTest {
         assertAllTranslated(keys);
     }
 
-    private static String problemWith(SlotsGame game, TableSettings settings) {
+    /** The same for a blackjack table, and the hands a test table can be told to deal. */
+    @Test
+    void everyRefusalAndRiggedHandABlackjackTableCanShowIsWorded() {
+        BlackjackGame blackjack = BlackjackGame.standard();
+        Set<String> keys = new LinkedHashSet<>();
+        keys.add(problemWith(blackjack, TableSettings.empty()
+                .with(blackjack.minimumWager(), 50)
+                .with(blackjack.maximumWager(), 10)));
+        keys.add(problemWith(blackjack, TableSettings.empty()
+                .with(blackjack.buyInMinimum(), 500)
+                .with(blackjack.buyInMaximum(), 100)));
+        keys.add(problemWith(blackjack, TableSettings.empty()
+                .with(blackjack.minimumWager(), 100)
+                .with(blackjack.buyInMinimum(), 10)));
+        for (BlackjackRig rig : BlackjackRig.values()) {
+            keys.add(rig.translationKey());
+        }
+        keys.add("tablegames.reject.blackjack.insurance_answered");
+        for (String summary : List.of("dealer_blackjack", "dealer_bust", "dealer_stands")) {
+            keys.add("tablegames.summary.blackjack." + summary);
+        }
+        assertAllTranslated(keys);
+    }
+
+    private static String problemWith(Game game, TableSettings settings) {
         Optional<String> problem = game.settingsProblem(settings);
         assertTrue(problem.isPresent(), "these settings should have been refused");
         return problem.get();

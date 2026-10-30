@@ -30,6 +30,7 @@ public final class TableScreens {
                 pos -> new RouletteScreen(pos, "roulette", false));
         SCREENS.put("american_roulette",
                 pos -> new RouletteScreen(pos, "american_roulette", true));
+        SCREENS.put("blackjack", BlackjackScreen::new);
 
         // Not a table at all: its own cabinet, opened the same way, because
         // what the server sends is the game and not the block.
