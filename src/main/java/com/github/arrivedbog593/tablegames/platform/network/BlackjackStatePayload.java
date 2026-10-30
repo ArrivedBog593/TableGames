@@ -6,12 +6,15 @@ import com.github.arrivedbog593.tablegames.engine.card.Rank;
 import com.github.arrivedbog593.tablegames.engine.card.Shoe;
 import com.github.arrivedbog593.tablegames.engine.card.Suit;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackAction;
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackFormat;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackHand;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackRules;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackSession;
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackTournament;
 import com.github.arrivedbog593.tablegames.engine.session.Action;
 import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
+import com.github.arrivedbog593.tablegames.engine.table.TableSettings;
 import com.github.arrivedbog593.tablegames.platform.block.BlackjackTable;
 import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import com.mojang.authlib.GameProfile;
@@ -27,26 +30,32 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
  * A blackjack table as one player is allowed to see it.
  * <p>
- * Three parts. The seats are roulette's {@link RouletteStatePayload.TableView}:
+ * Four parts. The seats are roulette's {@link RouletteStatePayload.TableView}:
  * who is sitting, what they have down, who is ready, how long is left — the
  * same at every table. {@link DealView} is the felt, the same for everybody
  * looking at it: every seat's cards and wagers, and the dealer's cards as far
- * as they are turned over. {@link MineView} is addressed to the recipient
- * alone: their credits, and which moves are theirs to make.
+ * as they are turned over. {@link FormatView} is what the table is played
+ * for — who holds the bank, how a tournament stands — and is public too.
+ * {@link MineView} is addressed to the recipient alone: their credits, and
+ * which moves are theirs to make.
  * <p>
  * The hole card is the one thing at this table nobody may see, and it is not
  * hidden here — it is never put in. The felt is built from
  * {@link BlackjackSession#dealerShown()}, which leaves it out until the dealer
- * turns it.
+ * turns it. A player holding the bank does not see it early either: they
+ * turn it when the seats are done, like any dealer.
  */
-public record BlackjackStatePayload(RouletteStatePayload.TableView table, DealView deal, MineView mine)
+public record BlackjackStatePayload(RouletteStatePayload.TableView table, DealView deal, FormatView format,
+                                    MineView mine)
         implements CustomPacketPayload {
 
     /** No hand on the felt: the table is taking wagers or idle. */
@@ -210,6 +219,106 @@ public record BlackjackStatePayload(RouletteStatePayload.TableView table, DealVi
         }
     }
 
+    // --- What the table is played for --------------------------------------------------------
+
+    /** Bits of {@link SeatScore#flags()}. */
+    public static final int ENTRANT = 1;
+    public static final int OUT = 1 << 1;
+    public static final int WITHDRAWN = 1 << 2;
+    public static final int CONFIRMED = 1 << 3;
+
+    /** Bits of {@link FormatView#options()}. */
+    public static final int BANK_BY_HAND = 1;
+    public static final int BANK_WINS_TIES = 1 << 1;
+
+    /** A tournament not yet started, being played, or decided and on show. */
+    public static final int TOURNEY_LOBBY = 0;
+    public static final int TOURNEY_LIVE = 1;
+    public static final int TOURNEY_OVER = 2;
+
+    /**
+     * One seat's standing: tournament chips, or at a table played for fun
+     * the running score.
+     *
+     * @param chips what they hold, or have won or lost
+     * @param flags {@link #ENTRANT}, {@link #OUT}, {@link #WITHDRAWN}, {@link #CONFIRMED}
+     * @param place where they finished, once a tournament is decided; zero before
+     * @param prize what they won, once it is
+     */
+    public record SeatScore(int seatIndex, long chips, int flags, int place, long prize) {
+
+        public static final StreamCodec<ByteBuf, SeatScore> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, SeatScore::seatIndex,
+                ByteBufCodecs.VAR_LONG, SeatScore::chips,
+                ByteBufCodecs.VAR_INT, SeatScore::flags,
+                ByteBufCodecs.VAR_INT, SeatScore::place,
+                ByteBufCodecs.VAR_LONG, SeatScore::prize,
+                SeatScore::new);
+
+        public boolean has(int flag) {
+            return (flags & flag) != 0;
+        }
+    }
+
+    /**
+     * Where a tournament stands.
+     *
+     * @param handNumber the hand being played, counted from one
+     * @param hands      how many it lasts
+     * @param entry      what entering costs; zero when it is played for fun
+     * @param pot        the entries paid in
+     * @param state      {@link #TOURNEY_LOBBY}, {@link #TOURNEY_LIVE} or {@link #TOURNEY_OVER}
+     */
+    public record TourneyView(int handNumber, int hands, long entry, long pot, int state) {
+
+        public static final StreamCodec<ByteBuf, TourneyView> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, TourneyView::handNumber,
+                ByteBufCodecs.VAR_INT, TourneyView::hands,
+                ByteBufCodecs.VAR_LONG, TourneyView::entry,
+                ByteBufCodecs.VAR_LONG, TourneyView::pot,
+                ByteBufCodecs.VAR_INT, TourneyView::state,
+                TourneyView::new);
+
+        static final TourneyView NONE = new TourneyView(0, 0, 0, 0, TOURNEY_LOBBY);
+    }
+
+    /**
+     * What the table is played for, the same for everybody.
+     *
+     * @param format     ordinal of the {@link BlackjackFormat}
+     * @param forMoney   whether credits change hands
+     * @param bankerSeat the seat holding the bank this hand — or, between
+     *                   hands, the one that will — or {@link #NOBODY}
+     * @param tourney    the tournament, at a tournament table
+     * @param scores     each seat's chips or score, where there are any
+     * @param options    how a player bank plays: {@link #BANK_BY_HAND}, {@link #BANK_WINS_TIES}
+     */
+    public record FormatView(int format, boolean forMoney, int bankerSeat, TourneyView tourney,
+                             List<SeatScore> scores, int options) {
+
+        public static final StreamCodec<ByteBuf, FormatView> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, FormatView::format,
+                ByteBufCodecs.BOOL, FormatView::forMoney,
+                ByteBufCodecs.VAR_INT, FormatView::bankerSeat,
+                TourneyView.STREAM_CODEC, FormatView::tourney,
+                SeatScore.STREAM_CODEC.apply(ByteBufCodecs.list(RouletteStatePayload.MAX_SEATS_ON_WIRE)),
+                FormatView::scores,
+                ByteBufCodecs.VAR_INT, FormatView::options,
+                FormatView::new);
+
+        public BlackjackFormat blackjackFormat() {
+            return BlackjackFormat.values()[Math.clamp(format, 0, BlackjackFormat.values().length - 1)];
+        }
+
+        public boolean has(int option) {
+            return (options & option) != 0;
+        }
+
+        public Optional<SeatScore> score(int seatIndex) {
+            return scores.stream().filter(score -> score.seatIndex() == seatIndex).findFirst();
+        }
+    }
+
     // --- The recipient's own ----------------------------------------------------------------
 
     /**
@@ -241,6 +350,7 @@ public record BlackjackStatePayload(RouletteStatePayload.TableView table, DealVi
             StreamCodec.composite(
                     RouletteStatePayload.TableView.STREAM_CODEC, BlackjackStatePayload::table,
                     DealView.STREAM_CODEC, BlackjackStatePayload::deal,
+                    FormatView.STREAM_CODEC, BlackjackStatePayload::format,
                     MineView.STREAM_CODEC, BlackjackStatePayload::mine,
                     BlackjackStatePayload::new);
 
@@ -256,6 +366,7 @@ public record BlackjackStatePayload(RouletteStatePayload.TableView table, DealVi
                         RouletteStatePayload.NO_SEAT, 0),
                 new DealView(NO_HAND, List.of(), false, NOBODY, List.of(),
                         new RulesView(BlackjackRules.STANDARD.decks(), false, 0, 0, 0)),
+                new FormatView(BlackjackFormat.HOUSE.ordinal(), true, NOBODY, TourneyView.NONE, List.of(), 0),
                 new MineView(new PlayerFunds(0, 0, 0, 0, 0, 1), 0, 0, 0, 0));
     }
 
@@ -277,13 +388,34 @@ public record BlackjackStatePayload(RouletteStatePayload.TableView table, DealVi
         return mine.funds();
     }
 
+    public BlackjackFormat blackjackFormat() {
+        return format.blackjackFormat();
+    }
+
+    /** Whether the viewer may put chips down right now. */
     public boolean bettingOpen() {
-        return !deal.hasHand() && table.roundPhase().acceptsBets();
+        return switch (blackjackFormat()) {
+            case HOUSE -> !deal.hasHand() && table.roundPhase().acceptsBets();
+            case TOURNAMENT -> !deal.hasHand() && format.tourney().state() == TOURNEY_LIVE
+                    && mine.tableMaximum() > 0
+                    && myScore().map(score -> !score.has(OUT)).orElse(false);
+            case BANKER -> false;
+        };
     }
 
     /** The viewer's seat on the felt, if they have a wager or a hand there. */
     public Optional<SeatHands> mySpot() {
         return isSeated() ? deal.seat(mySeat()) : Optional.empty();
+    }
+
+    /** The viewer's chips or score, if this table keeps any. */
+    public Optional<SeatScore> myScore() {
+        return isSeated() ? format.score(mySeat()) : Optional.empty();
+    }
+
+    /** Whether the viewer holds the bank, or is about to. */
+    public boolean iAmBanker() {
+        return isSeated() && format.bankerSeat() == mySeat();
     }
 
     // --- Building it --------------------------------------------------------------------------
@@ -318,6 +450,10 @@ public record BlackjackStatePayload(RouletteStatePayload.TableView table, DealVi
                 if (hand.currentTurn().map(occupant::equals).orElse(false)) {
                     onClock = index;
                 }
+            } else if (hand != null && blackjack.bankerId().map(occupant::equals).orElse(false)) {
+                // The bank has no hand of its own in front of its seat, only a result.
+                seats.add(new SeatHands(index, 0, List.of(), 0, 0,
+                        blackjack.resultOf(occupant).orElse(NO_RESULT)));
             } else if (blackjack.betOf(occupant) > 0) {
                 seats.add(new SeatHands(index, blackjack.betOf(occupant), List.of(), 0, 0, NO_RESULT));
             }
@@ -344,19 +480,71 @@ public record BlackjackStatePayload(RouletteStatePayload.TableView table, DealVi
                 buyIn.map(BuyIn::minimum).orElse(0L),
                 buyIn.map(BuyIn::maximum).orElse(0L),
                 1L);
+        boolean banking = hand != null && blackjack.bankerId().map(playerId::equals).orElse(false);
+        int moves = blackjack.isDealing() || hand == null ? 0
+                : banking ? bitsOf(hand.bankerMoves()) : bitsOf(hand.legalActions(playerId));
         MineView mine = new MineView(funds, blackjack.limits().minimum(),
-                blackjack.currentMaximum(server), blackjack.isDealing() ? 0 : movesOf(hand, playerId),
+                blackjack.currentMaximum(server, playerId), moves,
                 hand == null ? 0 : hand.insuranceCost(playerId));
 
-        return new BlackjackStatePayload(tableView, deal, mine);
+        return new BlackjackStatePayload(tableView, deal, formatView(table, blackjack, seated), mine);
     }
 
-    private static int movesOf(BlackjackSession hand, UUID playerId) {
-        if (hand == null) {
-            return 0;
+    private static FormatView formatView(GameBlockEntity table, BlackjackTable blackjack, List<UUID> seated) {
+        int bankerSeat = blackjack.bankerId().or(blackjack::upcomingBanker)
+                .map(seated::indexOf).filter(index -> index >= 0).orElse(NOBODY);
+
+        TourneyView tourney = TourneyView.NONE;
+        List<SeatScore> scores = new ArrayList<>();
+        Optional<BlackjackTournament> running = blackjack.tournament();
+        if (running.isPresent()) {
+            BlackjackTournament tournament = running.get();
+            boolean decided = blackjack.tournamentDecided();
+            // Between paying a hand and betting the next, the felt still shows
+            // the one just played, and so does the count.
+            boolean showingPlayed = decided || blackjack.isPaid();
+            int handNumber = Math.min(tournament.hands(),
+                    tournament.handsPlayed() + (showingPlayed ? 0 : 1));
+            tourney = new TourneyView(Math.max(1, handNumber), tournament.hands(), tournament.entry(),
+                    tournament.pot(), decided ? TOURNEY_OVER : TOURNEY_LIVE);
+            Map<UUID, BlackjackTournament.Standing> standings = new HashMap<>();
+            if (decided) {
+                tournament.standings().forEach(standing -> standings.put(standing.playerId(), standing));
+            }
+            for (int index = 0; index < seated.size() && index < RouletteStatePayload.MAX_SEATS_ON_WIRE; index++) {
+                UUID occupant = seated.get(index);
+                if (!tournament.isEntrant(occupant)) {
+                    continue;
+                }
+                int flags = ENTRANT;
+                flags |= tournament.isIn(occupant) ? 0 : OUT;
+                flags |= tournament.hasWithdrawn(occupant) ? WITHDRAWN : 0;
+                flags |= blackjack.hasConfirmed(occupant) ? CONFIRMED : 0;
+                BlackjackTournament.Standing standing = standings.get(occupant);
+                scores.add(new SeatScore(index, tournament.chipsOf(occupant), flags,
+                        standing == null ? 0 : standing.place(), standing == null ? 0 : standing.prize()));
+            }
+        } else if (blackjack.format() == BlackjackFormat.TOURNAMENT) {
+            TableSettings settings = table.settings();
+            tourney = new TourneyView(0, blackjack.game().handsFrom(settings),
+                    blackjack.game().entryFrom(settings), 0, TOURNEY_LOBBY);
+        } else {
+            for (int index = 0; index < seated.size() && index < RouletteStatePayload.MAX_SEATS_ON_WIRE; index++) {
+                int at = index;
+                blackjack.scoreOf(seated.get(index)).ifPresent(score ->
+                        scores.add(new SeatScore(at, score, 0, 0, 0)));
+            }
         }
+        TableSettings options = table.settings();
+        int optionBits = (blackjack.game().bankerPlaysByHand(options) ? BANK_BY_HAND : 0)
+                | (blackjack.game().bankerWinsTies(options) ? BANK_WINS_TIES : 0);
+        return new FormatView(blackjack.format().ordinal(), blackjack.playsForMoney(), bankerSeat, tourney,
+                List.copyOf(scores), optionBits);
+    }
+
+    private static int bitsOf(List<Action> actions) {
         int moves = 0;
-        for (Action action : hand.legalActions(playerId)) {
+        for (Action action : actions) {
             moves |= switch (action) {
                 case BlackjackAction.Hit hit -> HIT;
                 case BlackjackAction.Stand stand -> STAND;

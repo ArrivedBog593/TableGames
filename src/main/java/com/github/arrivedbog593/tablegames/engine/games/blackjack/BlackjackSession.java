@@ -44,10 +44,17 @@ import java.util.random.RandomGenerator;
  * {@link #dealerStep()}, because how long they take is the table's business:
  * a dealer turning cards over one at a time is pacing, not a rule.
  * <p>
- * House-banked, so the outcome is not zero-sum. Wagers are taken from each
+ * Against the house the outcome is not zero-sum. Wagers are taken from each
  * seat's credits as they go down — the opening wager at the deal, a double or
  * split when asked for, insurance when taken — and what comes back is awarded
  * at the end.
+ * <p>
+ * Against a {@link BlackjackBanker} — a player holding the bank — it is: the
+ * banker is paid what the seats lose and pays what they win, and appears in
+ * the outcome for it. The banker is not one of the seats, never has a turn
+ * among them, and plays the dealer's cards. The hand never takes on a wager
+ * the banker could not pay: a double, a split or insurance the bank cannot
+ * cover is not offered.
  * <p>
  * The hole card is in here, and so is the shoe. Nothing in this class may be
  * sent to a client as it is; see {@link #dealerShown()}.
@@ -68,7 +75,18 @@ public final class BlackjackSession extends GameSession {
 
     private BlackjackStage stage;
 
+    /** The player holding the bank, or null when the house does. */
+    private final BlackjackBanker banker;
+
+    /** Whether a banker playing by hand has stood. */
+    private boolean bankerStood;
+
+    /** Whether a banker who plays by hand ran out their clock and is drawn for by rule. */
+    private boolean bankerByRule;
+
     /**
+     * A hand against the house.
+     *
      * @param seats       the players dealt in, in the order they act
      * @param shoe        the table's shoe, which this hand deals from and leaves
      *                    the poorer; never reshuffled in here
@@ -76,10 +94,24 @@ public final class BlackjackSession extends GameSession {
      */
     public BlackjackSession(List<Seat> seats, RandomGenerator random, BlackjackRules rules,
                             Shoe shoe, Map<UUID, Long> openingBets) {
+        this(seats, random, rules, shoe, openingBets, null);
+    }
+
+    /**
+     * A hand against a player holding the bank, or against the house when
+     * {@code banker} is null.
+     *
+     * @param banker who holds the bank; never one of the seats, and able to
+     *               cover every opening wager at its best payout
+     */
+    public BlackjackSession(List<Seat> seats, RandomGenerator random, BlackjackRules rules,
+                            Shoe shoe, Map<UUID, Long> openingBets, BlackjackBanker banker) {
         super(seats, random);
         this.rules = Objects.requireNonNull(rules, "rules");
         this.shoe = Objects.requireNonNull(shoe, "shoe");
         this.openingBets = Map.copyOf(openingBets);
+        this.banker = banker;
+        long openingWorstCase = 0;
         for (Seat seat : seats) {
             Long bet = this.openingBets.get(seat.playerId());
             if (bet == null || bet < 1) {
@@ -88,6 +120,13 @@ public final class BlackjackSession extends GameSession {
             if (bet > seat.credits()) {
                 throw new IllegalArgumentException("Seat " + seat.index() + " cannot cover " + bet);
             }
+            if (banker != null && seat.playerId().equals(banker.playerId())) {
+                throw new IllegalArgumentException("The banker cannot also play a seat");
+            }
+            openingWorstCase += rules.worstCaseOn(bet);
+        }
+        if (banker != null && openingWorstCase > banker.credits()) {
+            throw new IllegalArgumentException("The bank cannot cover " + openingWorstCase);
         }
     }
 
@@ -199,10 +238,11 @@ public final class BlackjackSession extends GameSession {
         List<Action> actions = new ArrayList<>();
         actions.add(new BlackjackAction.Hit());
         actions.add(new BlackjackAction.Stand());
-        if (hand.canDouble() && seat.credits() >= hand.bet()) {
+        if (hand.canDouble() && seat.credits() >= hand.bet() && bankCovers(hand.bet())) {
             actions.add(new BlackjackAction.DoubleDown());
         }
-        if (hand.canSplit(hands.get(playerId).size()) && seat.credits() >= hand.bet()) {
+        if (hand.canSplit(hands.get(playerId).size()) && seat.credits() >= hand.bet()
+                && bankCovers(hand.bet())) {
             actions.add(new BlackjackAction.Split());
         }
         return List.copyOf(actions);
@@ -269,6 +309,9 @@ public final class BlackjackSession extends GameSession {
         if (seat.credits() < hand.bet()) {
             return ActionResult.insufficientCredits();
         }
+        if (!bankCovers(hand.bet())) {
+            return ActionResult.rejected("tablegames.reject.blackjack.bank_cannot_cover");
+        }
         seat.wager(hand.bet());
         hand.doubleDown(shoe.draw());
         moveOn(seat);
@@ -282,6 +325,9 @@ public final class BlackjackSession extends GameSession {
         }
         if (seat.credits() < hand.bet()) {
             return ActionResult.insufficientCredits();
+        }
+        if (!bankCovers(hand.bet())) {
+            return ActionResult.rejected("tablegames.reject.blackjack.bank_cannot_cover");
         }
         seat.wager(hand.bet());
         int at = handOnClock.get(seat.playerId());
@@ -354,6 +400,10 @@ public final class BlackjackSession extends GameSession {
      * dealer stops drawing at seventeen, or at a hard one when the table hits
      * soft seventeens, and does not draw at all once every hand is busted or a
      * blackjack: there is nothing left for it to beat.
+     * <p>
+     * A banker who plays by hand draws with {@link #bankerAct}, and this only
+     * turns the hole card and, once they are done, pays; while they are
+     * still deciding, it does nothing.
      */
     public void dealerStep() {
         if (stage != BlackjackStage.DEALER) {
@@ -363,17 +413,92 @@ public final class BlackjackSession extends GameSession {
             holeShown = true;
             return;
         }
-        if (dealerDraws()) {
+        if (awaitingBanker()) {
+            return;
+        }
+        if (!bankerDrawsByHand() && dealerDraws()) {
             dealer.add(shoe.draw());
             return;
         }
         settle();
     }
 
-    /** Plays the dealer to the end at once. For tests, and for a table in a hurry. */
+    /**
+     * Plays the dealer to the end at once. For tests, and for a table in a
+     * hurry. Stops short at a banker's decision, which is theirs to make.
+     */
     public void playDealerOut() {
-        while (stage == BlackjackStage.DEALER) {
+        while (stage == BlackjackStage.DEALER && !awaitingBanker()) {
             dealerStep();
+        }
+    }
+
+    // --- A player holding the bank ---------------------------------------------------
+
+    /** Who holds the bank, or empty when the house does. */
+    public Optional<BlackjackBanker> banker() {
+        return Optional.ofNullable(banker);
+    }
+
+    /** Whether the bank could pay this much more on top of everything already down. */
+    private boolean bankCovers(long more) {
+        return banker == null || worstCaseHouseCost() + more <= banker.credits();
+    }
+
+    private boolean bankerDrawsByHand() {
+        return banker != null && banker.playsByHand() && !bankerByRule;
+    }
+
+    /**
+     * Whether the hand is waiting on the banker to hit or stand: their hole
+     * card is turned, somebody is still in against them, and they have
+     * neither stood nor reached twenty-one.
+     */
+    public boolean awaitingBanker() {
+        return stage == BlackjackStage.DEALER && holeShown && bankerDrawsByHand() && !bankerStood
+                && anyHandStillLive() && BlackjackHand.totalOf(dealer) < 21;
+    }
+
+    /** The moves open to the banker right now: a hit or a stand, or nothing. */
+    public List<Action> bankerMoves() {
+        return awaitingBanker()
+                ? List.of(new BlackjackAction.Hit(), new BlackjackAction.Stand())
+                : List.of();
+    }
+
+    /**
+     * A banker who plays by hand hits or stands. Nothing is paid here; the
+     * next {@link #dealerStep()} does that once they are done, so the table
+     * can show the last card before the money moves.
+     */
+    public ActionResult bankerAct(UUID playerId, BlackjackAction move) {
+        if (banker == null || !banker.playerId().equals(playerId)) {
+            return ActionResult.notYourTurn();
+        }
+        if (!awaitingBanker()) {
+            return ActionResult.wrongState();
+        }
+        return switch (move) {
+            case BlackjackAction.Hit hit -> {
+                dealer.add(shoe.draw());
+                yield ActionResult.ok();
+            }
+            case BlackjackAction.Stand stand -> {
+                bankerStood = true;
+                yield ActionResult.ok();
+            }
+            default -> ActionResult.illegalAction();
+        };
+    }
+
+    /**
+     * A banker who let their clock run out, or left, is drawn for by the
+     * dealer's rule for the rest of the hand, rather than stood where they
+     * were: standing a silent bank on twelve would hand every seat the hand.
+     */
+    public void bankerTimedOut() {
+        if (awaitingBanker()) {
+            bankerByRule = true;
         }
     }
 
@@ -430,6 +555,17 @@ public final class BlackjackSession extends GameSession {
             }
             seat.setStatus(SeatStatus.DONE);
         }
+        if (banker != null) {
+            // The bank's line is the other side of every seat's.
+            long bankDelta = 0;
+            for (Payout payout : payouts) {
+                bankDelta -= payout.delta();
+            }
+            payouts.add(new Payout(banker.playerId(), bankDelta));
+            if (bankDelta > 0) {
+                winners.add(banker.playerId());
+            }
+        }
         finish(new Outcome(payouts, winners, 0, summaryKey(dealerNatural, dealerTotal)));
     }
 
@@ -440,7 +576,7 @@ public final class BlackjackSession extends GameSession {
             return 0;
         }
         if (hand.natural()) {
-            return dealerNatural ? bet : bet + rules.naturalPayout().winOn(bet);
+            return dealerNatural ? push(bet) : bet + rules.naturalPayout().winOn(bet);
         }
         if (dealerNatural) {
             return 0;
@@ -448,7 +584,12 @@ public final class BlackjackSession extends GameSession {
         if (dealerTotal > 21 || hand.total() > dealerTotal) {
             return bet * 2;
         }
-        return hand.total() == dealerTotal ? bet : 0;
+        return hand.total() == dealerTotal ? push(bet) : 0;
+    }
+
+    /** A tie: the wager back, unless the bank is a player who plays the home rule. */
+    private long push(long bet) {
+        return banker != null && banker.winsTies() ? 0 : bet;
     }
 
     private static String summaryKey(boolean dealerNatural, int dealerTotal) {
@@ -470,7 +611,8 @@ public final class BlackjackSession extends GameSession {
 
     private boolean canAffordInsurance(Seat seat) {
         long cost = insuranceCost(seat.playerId());
-        return cost > 0 && seat.credits() >= cost;
+        // Paying two to one costs the bank twice the stake.
+        return cost > 0 && seat.credits() >= cost && bankCovers(cost * 2);
     }
 
     public boolean allInsuranceAnswered() {

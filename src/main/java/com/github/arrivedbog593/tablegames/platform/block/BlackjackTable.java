@@ -1,8 +1,9 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
-import com.github.arrivedbog593.economycore.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.engine.card.Shoe;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackAction;
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackBanker;
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackFormat;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackGame;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackHand;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackLimits;
@@ -10,12 +11,12 @@ import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackRig;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackRules;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackSession;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackStage;
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackTournament;
 import com.github.arrivedbog593.tablegames.engine.session.ActionResult;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
 import com.github.arrivedbog593.tablegames.engine.table.BettingWindow;
 import com.github.arrivedbog593.tablegames.engine.table.RoundPhase;
-import com.github.arrivedbog593.tablegames.platform.house.OutcomeSettler;
 import com.github.arrivedbog593.tablegames.platform.network.BlackjackStatePayload;
 import com.github.arrivedbog593.tablegames.platform.registry.ModSounds;
 import com.mojang.logging.LogUtils;
@@ -38,14 +39,18 @@ import java.util.Random;
 import java.util.UUID;
 
 /**
- * A blackjack table: the betting window, the shoe, and one hand at a time.
+ * A blackjack table: the shoe, and one hand at a time.
  * <p>
- * A round has two halves. The first is roulette's: whoever is seated puts a
- * wager in their spot while a clock runs, and the ready button cuts it short.
- * The second is the hand itself, which is turn by turn the way a dealer runs
- * it — insurance for everybody at once under an ace, then each seat in order
- * on its own clock, then the dealer card by card. The rules live in
+ * The hand is the same whoever the table plays against, and so is this part:
+ * it deals, keeps the clocks, and pays. Turn by turn the way a dealer runs it
+ * — insurance for everybody at once under an ace, then each seat in order on
+ * its own clock, then the dealer card by card. The rules live in
  * {@link BlackjackSession}; this decides how long everything takes.
+ * <p>
+ * Who the wagers are against, and where they come from, is each format's:
+ * {@link BlackjackHouseTable} against the casino, {@link BlackjackTournamentTable}
+ * for tournament chips, {@link BlackjackBankerTable} against a player holding
+ * the bank. Each decides when to deal and what to do with what a hand paid.
  * <p>
  * Pacing is part of keeping the result honest on screen. The deal waits long
  * enough for every card to be seen landing, the dealer waits between cards,
@@ -57,11 +62,11 @@ import java.util.UUID;
  * a live hand. Someone who closes the screen keeps their seat, and their turn
  * is stood for them rather than waited out.
  */
-public final class BlackjackTable implements TableRuntime {
+public abstract class BlackjackTable implements TableRuntime {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private static final int TICKS = BettingWindow.TICKS_PER_SECOND;
+    static final int TICKS = BettingWindow.TICKS_PER_SECOND;
 
     /** A decision on one hand. Long enough to think, short enough that seven seats is not a wait. */
     static final int TURN_SECONDS = 20;
@@ -78,13 +83,8 @@ public final class BlackjackTable implements TableRuntime {
     /** From the last card landing to the chips moving. */
     static final int SETTLE_TICKS = 10;
 
-    private final GameBlockEntity table;
-    private final BlackjackGame game;
-
-    private final BettingWindow window = new BettingWindow();
-
-    /** Opening wagers, in the order they went down, while betting is open. */
-    private final Map<UUID, Long> bets = new LinkedHashMap<>();
+    protected final GameBlockEntity table;
+    protected final BlackjackGame game;
 
     /** Built on the first deal and kept across hands; rebuilt when the deck count changes. */
     private Shoe shoe;
@@ -115,46 +115,47 @@ public final class BlackjackTable implements TableRuntime {
         this.game = game;
     }
 
+    /** The table for a game of this format. */
+    static BlackjackTable forGame(GameBlockEntity table, BlackjackGame game) {
+        return switch (game.format()) {
+            case HOUSE -> new BlackjackHouseTable(table, game);
+            case TOURNAMENT -> new BlackjackTournamentTable(table, game);
+            case BANKER -> new BlackjackBankerTable(table, game);
+        };
+    }
+
     public BlackjackGame game() {
         return game;
     }
 
-    // --- The round --------------------------------------------------------------------------
-
-    @Override
-    public RoundPhase phase() {
-        if (handLive()) {
-            return RoundPhase.LOCKED;
-        }
-        return window.phase();
+    public BlackjackFormat format() {
+        return game.format();
     }
 
+    // --- The hand ----------------------------------------------------------------------------
+
     /** Whether a hand is dealt and not yet paid. */
-    private boolean handLive() {
+    protected final boolean handLive() {
         return session != null && (session.stage() != BlackjackStage.SETTLED || !paid);
     }
 
-    @Override
-    public int secondsRemaining() {
-        if (handLive()) {
-            return isOnAClock() ? (wait + TICKS - 1) / TICKS : 0;
-        }
-        return window.secondsRemaining();
+    /** What the clock says while a hand is live. */
+    protected final int handSecondsRemaining() {
+        return isOnAClock() ? (wait + TICKS - 1) / TICKS : 0;
     }
 
     /** Whether the table is waiting on a person rather than on its own pacing. */
     private boolean isOnAClock() {
-        return session != null && dealSounds == 0
-                && (session.stage() == BlackjackStage.INSURANCE || session.stage() == BlackjackStage.PLAYERS);
+        if (session == null || dealSounds > 0) {
+            return false;
+        }
+        return session.stage() == BlackjackStage.INSURANCE || session.stage() == BlackjackStage.PLAYERS
+                || session.awaitingBanker();
     }
 
     /** Whether the cards are still going out, so nobody may move yet. */
     public boolean isDealing() {
         return dealSounds > 0;
-    }
-
-    public boolean isBettingOpen() {
-        return session == null && window.phase().acceptsBets();
     }
 
     /** The hand on the felt, live or on show, if there is one. */
@@ -172,57 +173,10 @@ public final class BlackjackTable implements TableRuntime {
         return paid ? Optional.ofNullable(results.get(playerId)) : Optional.empty();
     }
 
-    /** This player's opening wager while betting is open. */
-    public long betOf(UUID playerId) {
-        return bets.getOrDefault(playerId, 0L);
-    }
-
     /** The shoe, for the felt to say how deep into it the table is. Null before the first deal. */
     public Shoe shoe() {
         return shoe;
     }
-
-    @Override
-    public long wageredBy(UUID playerId) {
-        if (handLive()) {
-            return session.stage() == BlackjackStage.SETTLED ? 0 : session.wageredBy(playerId);
-        }
-        return betOf(playerId);
-    }
-
-    @Override
-    public boolean hasLiveStakes() {
-        return !bets.isEmpty() || handLive();
-    }
-
-    @Override
-    public long worstCaseHouseCost() {
-        if (handLive()) {
-            return session.worstCaseHouseCost();
-        }
-        BlackjackRules rules = rules();
-        long worst = 0;
-        for (long bet : bets.values()) {
-            worst += rules.worstCaseOn(bet);
-        }
-        return worst;
-    }
-
-    @Override
-    public void seatLost(UUID playerId) {
-        // Only ever between hands: the table refuses to let anybody stand,
-        // and holds evictions, while one is live.
-        bets.remove(playerId);
-    }
-
-    @Override
-    public void votesChanged() {
-        if (table.allSeatedReady() && window.isRunning()) {
-            window.callNow();
-        }
-    }
-
-    // --- Limits -----------------------------------------------------------------------------
 
     public BlackjackLimits limits() {
         return game.limitsFrom(table.activeSettings());
@@ -232,16 +186,55 @@ public final class BlackjackTable implements TableRuntime {
         return game.rulesFrom(table.activeSettings());
     }
 
-    /**
-     * The largest opening wager the table will take right now: its own posted
-     * maximum, or what the bankroll can cover at two to one — a blackjack, or
-     * a double — whichever is less.
-     */
-    public long currentMaximum(MinecraftServer server) {
-        return Math.min(table.funds().tableMaximum(server, game, 2), limits().ceiling());
+    /** Whether credits change hands here, or the game is played for nothing. */
+    public boolean playsForMoney() {
+        return game.playsForMoney(table.activeSettings());
     }
 
-    // --- Wagers -----------------------------------------------------------------------------
+    /** Who holds the bank on the hand on the felt; empty for the house. */
+    public Optional<UUID> bankerId() {
+        return hand().flatMap(BlackjackSession::banker).map(BlackjackBanker::playerId);
+    }
+
+    // --- What each format answers ------------------------------------------------------------
+
+    /** Whether a seat may put down or change an opening wager right now. */
+    public abstract boolean isBettingOpen();
+
+    /** This player's opening wager while betting is open. */
+    public long betOf(UUID playerId) {
+        return 0;
+    }
+
+    /** The largest opening wager this player could make right now. */
+    public abstract long currentMaximum(MinecraftServer server, UUID playerId);
+
+    /** Who would hold the bank if a hand were dealt now; empty where players never do. */
+    public Optional<UUID> upcomingBanker() {
+        return Optional.empty();
+    }
+
+    /** The tournament being played, if this table plays them and one is on. */
+    public Optional<BlackjackTournament> tournament() {
+        return Optional.empty();
+    }
+
+    /** Whether the tournament on show is decided, its standings final. */
+    public boolean tournamentDecided() {
+        return false;
+    }
+
+    /** What a player has won or lost here so far, at a table played for fun. */
+    public Optional<Long> scoreOf(UUID playerId) {
+        return Optional.empty();
+    }
+
+    /** Whether this player has said their wager is final. */
+    public boolean hasConfirmed(UUID playerId) {
+        return false;
+    }
+
+    // --- Requests ----------------------------------------------------------------------------
 
     /**
      * Adds to a seated player's opening wager.
@@ -249,62 +242,27 @@ public final class BlackjackTable implements TableRuntime {
      * @return why not, or null when taken
      */
     public Component placeBet(ServerPlayer player, long amount) {
-        UUID playerId = player.getUUID();
-        if (!table.isSeated(playerId)) {
-            return Component.translatable("tablegames.seat.must_be_seated");
-        }
-        if (!isBettingOpen()) {
-            return Component.translatable("tablegames.blackjack.betting_closed");
-        }
-        MinecraftServer server = player.server;
-        if (!table.funds().canOpen(server, game)) {
-            return Component.translatable("tablegames.roulette.house_closed");
-        }
-        long total = betOf(playerId) + amount;
-        BlackjackLimits limits = limits();
-        if (total < limits.minimum()) {
-            return Component.translatable("tablegames.reject.below_minimum_bet",
-                    CreditFormat.of(limits.minimum()));
-        }
-        long maximum = currentMaximum(server);
-        if (total > maximum) {
-            return Component.translatable("tablegames.reject.above_maximum_bet",
-                    CreditFormat.of(maximum), CreditFormat.of(Math.max(0, maximum - betOf(playerId))));
-        }
-        long stack = table.stackOf(playerId);
-        if (total > stack) {
-            return Component.translatable("tablegames.reject.insufficient_stack",
-                    CreditFormat.of(Math.max(0, stack - betOf(playerId))));
-        }
-        long worstCase = worstCaseHouseCost() - rules().worstCaseOn(betOf(playerId))
-                + rules().worstCaseOn(total);
-        if (!table.funds().withinExposure(server, game, table.commitmentKey(), worstCase)) {
-            return Component.translatable("tablegames.reject.house_exposed");
-        }
-
-        bets.put(playerId, total);
-        play(ModSounds.ROULETTE_CHIP.get(), 0.7f);
-        table.publishCommitments();
-        table.withdrawVote(playerId);
-        window.start();
-        table.markDirty();
-        return null;
+        return Component.translatable("tablegames.blackjack.betting_closed");
     }
 
     /** Takes a player's opening wager back, while betting is open. */
     public boolean clearBet(UUID playerId) {
-        if (!isBettingOpen() || bets.remove(playerId) == null) {
-            return false;
-        }
-        table.publishCommitments();
-        table.markDirty();
-        return true;
+        return false;
     }
 
-    // --- Moves -------------------------------------------------------------------------------
+    /** Says a player's wager is final. Only a tournament asks. */
+    public Component confirmBet(ServerPlayer player) {
+        return Component.translatable("tablegames.blackjack.betting_closed");
+    }
+
+    /** Leaves a tournament before it ends. */
+    public Component withdraw(ServerPlayer player) {
+        return Component.translatable("tablegames.blackjack.no_tournament");
+    }
 
     /**
-     * Plays a move for a player at the hand in progress.
+     * Plays a move for a player at the hand in progress: a seat's, or the
+     * bank's when they hold it.
      *
      * @return why not, or null when made
      */
@@ -313,21 +271,24 @@ public final class BlackjackTable implements TableRuntime {
         if (session == null || !handLive() || dealSounds > 0) {
             return Component.translatable("tablegames.blackjack.no_hand");
         }
-        // A double, a split or insurance puts more down, and the house has to
-        // be able to cover it before it is allowed.
-        long more = switch (move) {
-            case BlackjackAction.DoubleDown doubleDown -> session.nextWagerOnClock();
-            case BlackjackAction.Split split -> session.nextWagerOnClock();
-            case BlackjackAction.Insurance(boolean take) -> take ? session.insuranceCost(playerId) * 2 : 0;
-            default -> 0;
-        };
-        if (more > 0 && !table.funds().withinExposure(player.server, game, table.commitmentKey(),
-                session.worstCaseHouseCost() + more)) {
-            return Component.translatable("tablegames.reject.house_exposed");
-        }
-
         int cardsBefore = cardsOnTheFelt();
-        ActionResult result = session.submit(playerId, move);
+        ActionResult result;
+        if (bankerId().map(playerId::equals).orElse(false)) {
+            result = session.bankerAct(playerId, move);
+        } else {
+            // A double, a split or insurance puts more down, and the house
+            // has to be able to cover it before it is allowed.
+            long more = switch (move) {
+                case BlackjackAction.DoubleDown doubleDown -> session.nextWagerOnClock();
+                case BlackjackAction.Split split -> session.nextWagerOnClock();
+                case BlackjackAction.Insurance(boolean take) -> take ? session.insuranceCost(playerId) * 2 : 0;
+                default -> 0;
+            };
+            if (more > 0 && !houseCovers(player.server, session.worstCaseHouseCost() + more)) {
+                return Component.translatable("tablegames.reject.house_exposed");
+            }
+            result = session.submit(playerId, move);
+        }
         if (!result.accepted()) {
             return Component.translatable(result.messageKey());
         }
@@ -339,6 +300,11 @@ public final class BlackjackTable implements TableRuntime {
         }
         afterMove();
         return null;
+    }
+
+    /** Whether the house could take on this much; only the house's own table ever says no. */
+    protected boolean houseCovers(MinecraftServer server, long worstCase) {
+        return true;
     }
 
     private int cardsOnTheFelt() {
@@ -353,32 +319,13 @@ public final class BlackjackTable implements TableRuntime {
 
     // --- Ticking ------------------------------------------------------------------------------
 
-    @Override
-    public void tick() {
-        if (handLive()) {
-            guarded(this::tickHand);
-            return;
-        }
-        switch (window.tick()) {
-            case SPIN -> guarded(this::deal);
-            case RESULT_CLEARED -> {
-                session = null;
-                results.clear();
-                table.markDirty();
-            }
-            case LOCKED, SECOND_ELAPSED -> table.markDirty();
-            case NONE -> {
-            }
-        }
-    }
-
     /**
-     * Runs a step of the hand, guarding the tick against anything the rules
+     * Runs a step of the table, guarding the tick against anything the rules
      * throw. Same reasoning as roulette's spin: an exception here stops every
      * block entity behind this one in the chunk, and wagers only become
      * credits at settlement, so dropping the hand is a complete refund.
      */
-    private void guarded(Runnable step) {
+    protected final void guarded(Runnable step) {
         try {
             step.run();
         } catch (RuntimeException failure) {
@@ -391,7 +338,8 @@ public final class BlackjackTable implements TableRuntime {
         }
     }
 
-    private void tickHand() {
+    /** One tick of the hand on the felt. Callers check {@link #handLive()} first. */
+    protected final void tickHand() {
         if (wait > 0) {
             wait--;
             if (dealSounds > 0 && wait % DEAL_CARD_TICKS == 0) {
@@ -403,7 +351,10 @@ public final class BlackjackTable implements TableRuntime {
             }
             // Nobody waits out the clock of a player who is not there.
             if (isOnAClock() && session.stage() == BlackjackStage.PLAYERS
-                    && session.currentTurn().map(table::isAway).orElse(false)) {
+                    && session.currentTurn().map(this::isGone).orElse(false)) {
+                wait = 0;
+            }
+            if (isOnAClock() && session.awaitingBanker() && bankerId().map(this::isGone).orElse(false)) {
                 wait = 0;
             }
             if (wait > 0) {
@@ -422,11 +373,17 @@ public final class BlackjackTable implements TableRuntime {
                 afterMove();
             }
             case DEALER -> {
+                if (session.awaitingBanker()) {
+                    session.bankerTimedOut();
+                    afterMove();
+                    return;
+                }
                 boolean wasHidden = session.holeHidden();
+                int before = session.dealerShown().size();
                 session.dealerStep();
                 if (wasHidden) {
                     play(ModSounds.BLACKJACK_FLIP.get(), 0.9f);
-                } else if (session.stage() == BlackjackStage.DEALER) {
+                } else if (session.dealerShown().size() > before) {
                     play(ModSounds.BLACKJACK_CARD.get(), 0.8f);
                 }
                 afterMove();
@@ -435,23 +392,32 @@ public final class BlackjackTable implements TableRuntime {
         }
     }
 
+    /** Whether a player is not there to play their turn: away from the screen, or out of the game. */
+    protected boolean isGone(UUID playerId) {
+        return table.isAway(playerId);
+    }
+
     /**
      * Sets the next wait for wherever the hand now stands, and makes sure the
      * table and the room hear about it.
      * <p>
      * A wait restarts only when what it is for has changed: a hit that leaves
      * the same hand on the clock does not hand its player a fresh twenty
-     * seconds, or nobody would ever run out.
+     * seconds, or nobody would ever run out. The bank's decision is one clock
+     * however many cards it draws, for the same reason.
      */
     private void afterMove() {
+        boolean banker = session.awaitingBanker();
         String now = session.stage() + ":" + session.currentTurn().map(UUID::toString).orElse("")
-                + ":" + session.currentTurn().map(session::handOnClockIndex).orElse(-1);
-        if (!now.equals(waitingOn) || session.stage() == BlackjackStage.DEALER) {
+                + ":" + session.currentTurn().map(session::handOnClockIndex).orElse(-1)
+                + (banker ? ":banker" : "");
+        boolean dealerPacing = session.stage() == BlackjackStage.DEALER && !banker;
+        if (!now.equals(waitingOn) || dealerPacing) {
             waitingOn = now;
             wait = switch (session.stage()) {
                 case INSURANCE -> session.allInsuranceAnswered() ? 0 : INSURANCE_SECONDS * TICKS;
                 case PLAYERS -> TURN_SECONDS * TICKS;
-                case DEALER -> DEALER_CARD_TICKS;
+                case DEALER -> banker ? TURN_SECONDS * TICKS : DEALER_CARD_TICKS;
                 case SETTLED -> SETTLE_TICKS;
             };
         }
@@ -466,29 +432,15 @@ public final class BlackjackTable implements TableRuntime {
     }
 
     /**
-     * Closes betting and deals.
-     * <p>
-     * Seated players with a wager down are dealt in, in seat order. Each seat
-     * plays with its stack: a double or a split can only ever put down what
-     * the player brought.
+     * Deals a hand: these players, in this order, for these wagers, each
+     * playing from what they have here.
+     *
+     * @param credits what each player can put down on the hand, doubles and
+     *                splits included
+     * @param banker  who holds the bank, or null for the dealer
      */
-    private void deal() {
-        Level level = table.getLevel();
-        if (level == null || level.getServer() == null) {
-            return;
-        }
-        List<UUID> players = new ArrayList<>();
-        for (UUID seated : table.seatedPlayers()) {
-            if (bets.containsKey(seated)) {
-                players.add(seated);
-            }
-        }
-        if (players.isEmpty()) {
-            bets.clear();
-            table.endRound(players);
-            return;
-        }
-
+    protected final void dealHand(Level level, List<UUID> players, Map<UUID, Long> opening,
+                                  Map<UUID, Long> credits, BlackjackBanker banker) {
         BlackjackRules rules = rules();
         Random random = new Random(level.random.nextLong());
         if (shoe == null || shoe.decks() != rules.decks() || shoe.pastCutCard()) {
@@ -503,18 +455,15 @@ public final class BlackjackTable implements TableRuntime {
         rigged = null;
 
         List<Seat> seats = new ArrayList<>();
-        Map<UUID, Long> opening = new LinkedHashMap<>();
         for (int i = 0; i < players.size(); i++) {
             UUID playerId = players.get(i);
-            seats.add(Seat.forPlayer(i, playerId, table.stackOf(playerId)));
-            opening.put(playerId, bets.get(playerId));
+            seats.add(Seat.forPlayer(i, playerId, credits.get(playerId)));
         }
-        bets.clear();
         results.clear();
         paid = false;
         waitingOn = "";
 
-        session = game.createSession(seats, random, rules, shoe, opening);
+        session = game.createSession(seats, random, rules, shoe, opening, banker);
         session.begin();
         afterMove();
         // However the hand stands, nothing happens until the deal has been
@@ -529,35 +478,43 @@ public final class BlackjackTable implements TableRuntime {
         if (level == null || level.getServer() == null || paid) {
             return;
         }
-        MinecraftServer server = level.getServer();
-        List<UUID> players = session.seats().stream().map(Seat::playerId).toList();
+        List<UUID> players = new ArrayList<>(session.seats().stream().map(Seat::playerId).toList());
+        bankerId().ifPresent(players::add);
         Outcome outcome = session.outcome().orElse(null);
         paid = true;
-        if (outcome == null) {
+        if (outcome == null || !applyOutcome(level.getServer(), outcome)) {
             session = null;
-            table.endRound(players);
+            handOver(players, null);
             return;
         }
-
-        OutcomeSettler.Result settled = table.funds().settle(
-                server, game, outcome, "at " + table.getBlockPos().toShortString());
-        if (!settled.applied()) {
-            table.tellViewers(Component.translatable(settled.reasonKey()));
-            table.tellViewers(Component.translatable("tablegames.settle.refunded"));
-            session = null;
-            table.endRound(players);
-            return;
-        }
-        table.settleStacks(outcome);
         outcome.payouts().forEach(payout -> results.put(payout.playerId(), payout.delta()));
         if (!outcome.winners().isEmpty()) {
             play(ModSounds.ROULETTE_PAYOUT.get(), 0.9f);
         }
-        window.showResult();
-        table.endRound(players);
+        handOver(players, outcome);
     }
 
-    private void play(SoundEvent sound, float volume) {
+    /**
+     * Pays a settled hand, in credits or in chips.
+     *
+     * @return whether it was applied; when not, the hand is dropped, which
+     *         refunds it, and the table has said why
+     */
+    protected abstract boolean applyOutcome(MinecraftServer server, Outcome outcome);
+
+    /**
+     * After a hand is paid, or dropped when {@code outcome} is null: the
+     * format puts the result on show and closes the round.
+     */
+    protected abstract void handOver(List<UUID> players, Outcome outcome);
+
+    /** Takes the hand off the felt, once its result has been on show. */
+    protected final void clearHand() {
+        session = null;
+        results.clear();
+    }
+
+    protected final void play(SoundEvent sound, float volume) {
         Level level = table.getLevel();
         if (level != null) {
             level.playSound(null, table.getBlockPos(), sound, SoundSource.BLOCKS,
@@ -596,16 +553,15 @@ public final class BlackjackTable implements TableRuntime {
         return Optional.ofNullable(rigged).map(BlackjackRig::id);
     }
 
+    /** Drops the hand on the felt. Formats add whatever else they hold. */
     @Override
     public void abandon() {
-        bets.clear();
         session = null;
         results.clear();
         paid = false;
         wait = 0;
         dealSounds = 0;
         waitingOn = "";
-        window.reset();
     }
 
     @Override

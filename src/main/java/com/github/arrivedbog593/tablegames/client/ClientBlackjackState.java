@@ -1,8 +1,10 @@
 package com.github.arrivedbog593.tablegames.client;
 
+import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackFormat;
 import com.github.arrivedbog593.tablegames.platform.network.BlackjackStatePayload;
 import com.github.arrivedbog593.tablegames.platform.network.PlayerFunds;
 
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,8 +38,12 @@ public final class ClientBlackjackState {
 
     private static PlayerFunds fundsBeforeDeal = BlackjackStatePayload.idle().funds();
 
-    /** What the viewer opened with on their last hand, for "repeat". */
-    private static long lastBet;
+    /**
+     * What the viewer opened with on their last hand, for "repeat", by
+     * format: tournament chips are not credits, and a wager remembered from
+     * one must not be offered at the other.
+     */
+    private static final Map<BlackjackFormat, Long> lastBets = new EnumMap<>(BlackjackFormat.class);
 
     private ClientBlackjackState() {
     }
@@ -45,7 +51,7 @@ public final class ClientBlackjackState {
     /**
      * Forgets the last table, for a screen opening on one. Whatever it shows
      * first comes from that table's own packet, never from another's.
-     * "Repeat" survives: it is what this player bet, wherever they bet it.
+     * "Repeat" survives: it is what this player bet at any table of the format.
      */
     static void reset() {
         state = BlackjackStatePayload.idle();
@@ -66,19 +72,23 @@ public final class ClientBlackjackState {
             landsAt.clear();
             dealLandsAt = 0;
         } else if (!state.deal().hasHand()) {
-            // A fresh deal: every card on it lands in dealing order.
+            // A fresh deal: every card on it lands in dealing order. A player
+            // holding the bank sits at the table but is dealt the dealer's
+            // cards, not a seat's.
             fundsBeforeDeal = state.funds();
-            int seats = deal.seats().size();
+            List<BlackjackStatePayload.SeatHands> dealtIn = deal.seats().stream()
+                    .filter(seat -> !seat.hands().isEmpty()).toList();
+            int seats = dealtIn.size();
             for (int order = 0; order < seats; order++) {
-                int seatIndex = deal.seats().get(order).seatIndex();
+                int seatIndex = dealtIn.get(order).seatIndex();
                 landsAt.put(key(seatIndex, 0, 0), now + order * DEAL_CARD_MILLIS);
                 landsAt.put(key(seatIndex, 0, 1), now + (seats + 1 + order) * DEAL_CARD_MILLIS);
             }
             landsAt.put(dealerKey(0), now + seats * DEAL_CARD_MILLIS);
             landsAt.put(dealerKey(1), now + (2L * seats + 1) * DEAL_CARD_MILLIS);
             dealLandsAt = now + (2L * seats + 2) * DEAL_CARD_MILLIS;
-            payload.mySpot().ifPresent(spot -> lastBet = spot.hands().isEmpty() ? lastBet
-                    : spot.hands().getFirst().bet());
+            payload.mySpot().filter(spot -> !spot.hands().isEmpty()).ifPresent(spot ->
+                    lastBets.put(payload.blackjackFormat(), spot.hands().getFirst().bet()));
         }
         // Anything not yet timed lands now: a hit, a split card, the dealer's.
         if (deal.hasHand()) {
@@ -129,7 +139,7 @@ public final class ClientBlackjackState {
         return dealing() ? fundsBeforeDeal : state.funds();
     }
 
-    public static long lastBet() {
-        return lastBet;
+    public static long lastBet(BlackjackFormat format) {
+        return lastBets.getOrDefault(format, 0L);
     }
 }

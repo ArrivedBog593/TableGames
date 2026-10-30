@@ -13,8 +13,10 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -39,7 +41,7 @@ class SettingTranslationTest {
     /** Everything the engine can build, and so everything a table can post. */
     private static List<Game> everyGame() {
         return List.of(RouletteGame.european(), RouletteGame.american(), SlotsGame.standard(),
-                BlackjackGame.standard());
+                BlackjackGame.standard(), BlackjackGame.tournament(), BlackjackGame.banker());
     }
 
     @Test
@@ -55,6 +57,27 @@ class SettingTranslationTest {
                 }
             }
         }
+        assertAllTranslated(keys);
+    }
+
+    /**
+     * A family of several games is a menu of its own, named, with each game
+     * in it named again as a mode.
+     */
+    @Test
+    void everyFamilyAndItsModesAreNamedInEveryLanguage() {
+        Map<String, List<Game>> families = new LinkedHashMap<>();
+        for (Game game : everyGame()) {
+            families.computeIfAbsent(game.family(), family -> new ArrayList<>()).add(game);
+        }
+        Set<String> keys = new LinkedHashSet<>();
+        for (List<Game> games : families.values()) {
+            if (games.size() > 1) {
+                keys.add(games.getFirst().familyTranslationKey());
+                games.forEach(game -> keys.add(game.modeTranslationKey()));
+            }
+        }
+        assertTrue(keys.size() > 2, "roulette and blackjack should both be families");
         assertAllTranslated(keys);
     }
 
@@ -104,9 +127,21 @@ class SettingTranslationTest {
             keys.add(rig.translationKey());
         }
         keys.add("tablegames.reject.blackjack.insurance_answered");
-        for (String summary : List.of("dealer_blackjack", "dealer_bust", "dealer_stands")) {
+        keys.add("tablegames.reject.blackjack.bank_cannot_cover");
+        for (String summary : List.of("dealer_blackjack", "dealer_bust", "dealer_stands", "tournament")) {
             keys.add("tablegames.summary.blackjack." + summary);
         }
+
+        // A tournament nobody could place the first bet in.
+        BlackjackGame tournament = BlackjackGame.tournament();
+        keys.add(problemWith(tournament, TableSettings.empty()
+                .with(tournament.startingChips(), 50)
+                .with(tournament.minimumWager(), 100)));
+        // A player bank whose buy-in cannot cover the wager it plays for.
+        BlackjackGame banker = BlackjackGame.banker();
+        keys.add(problemWith(banker, TableSettings.empty()
+                .with(banker.fixedBet(), 500)
+                .with(banker.buyInMinimum(), 100)));
         assertAllTranslated(keys);
     }
 

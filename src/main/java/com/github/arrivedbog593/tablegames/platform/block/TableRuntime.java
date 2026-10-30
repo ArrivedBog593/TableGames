@@ -38,7 +38,7 @@ public interface TableRuntime {
             return new SlotCabinet(table, slots);
         }
         if (game instanceof BlackjackGame blackjack) {
-            return new BlackjackTable(table, blackjack);
+            return BlackjackTable.forGame(table, blackjack);
         }
         return IdleRuntime.INSTANCE;
     }

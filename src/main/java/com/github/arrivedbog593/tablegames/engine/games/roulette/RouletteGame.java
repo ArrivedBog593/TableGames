@@ -67,6 +67,12 @@ public record RouletteGame(String id, RouletteWheel wheel, BetLimits limits)
                 BetLimits.DEFAULT);
     }
 
+    /** Both wheels are roulette. */
+    @Override
+    public String family() {
+        return "roulette";
+    }
+
     @Override
     public int minPlayers() {
         return 1;

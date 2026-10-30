@@ -34,6 +34,27 @@ public interface Game {
         return "tablegames.game." + id();
     }
 
+    /**
+     * The game this is a variant of, for menus that group them: both roulette
+     * wheels are roulette, every blackjack format is blackjack. A game with no
+     * variants is a family of one, under its own id.
+     */
+    default String family() {
+        return id();
+    }
+
+    default String familyTranslationKey() {
+        return "tablegames.family." + family();
+    }
+
+    /**
+     * This game's name inside its family's menu: "Tournament" under
+     * Blackjack, rather than "Blackjack: Tournament" again.
+     */
+    default String modeTranslationKey() {
+        return "tablegames.mode." + id();
+    }
+
     /** Fewer players needed to start. Solo house games return 1. */
     int minPlayers();
 

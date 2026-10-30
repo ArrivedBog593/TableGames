@@ -99,4 +99,64 @@ class BlackjackGameTest {
         assertEquals(Deck.STANDARD_SIZE - 1, shoe.remaining());
         assertFalse(shoe.pastCutCard());
     }
+
+    // --- Between players ------------------------------------------------------------------
+
+    @Test
+    void onlyTheHouseFormatPlaysTheHouse() {
+        assertTrue(GAME.isHouseBanked());
+        assertFalse(BlackjackGame.tournament().isHouseBanked());
+        assertFalse(BlackjackGame.banker().isHouseBanked());
+        assertEquals(2, BlackjackGame.tournament().minPlayers());
+        assertEquals(2, BlackjackGame.banker().minPlayers());
+    }
+
+    @Test
+    void aTournamentForMoneySetsExactlyItsEntryAsideAndOneForFunNothing() {
+        BlackjackGame tournament = BlackjackGame.tournament();
+        TableSettings paid = TableSettings.empty().with(tournament.entry(), 250);
+        assertEquals(new BuyIn(250, 250), tournament.buyIn(paid).orElseThrow());
+        assertEquals(250, tournament.entryFrom(paid));
+
+        TableSettings fun = paid.with(tournament.forMoney(), 0);
+        assertTrue(tournament.buyIn(fun).isEmpty());
+        assertEquals(0, tournament.entryFrom(fun));
+        assertFalse(tournament.playsForMoney(fun));
+    }
+
+    @Test
+    void anUntouchedTournamentIsFifteenHandsOfFiveThousandChips() {
+        BlackjackGame tournament = BlackjackGame.tournament();
+        TableSettings untouched = TableSettings.empty();
+        assertTrue(tournament.settingsProblem(untouched).isEmpty());
+        assertEquals(15, tournament.handsFrom(untouched));
+        assertEquals(5000, tournament.startingChipsFrom(untouched));
+        assertEquals(500, tournament.entryFrom(untouched));
+        assertEquals(PrizeSplit.WINNER_TAKES_ALL, tournament.prizeSplitFrom(untouched));
+    }
+
+    @Test
+    void aPlayerBankPlaysForOneWagerWhateverTheTable() {
+        BlackjackGame banker = BlackjackGame.banker();
+        TableSettings settings = TableSettings.empty().with(banker.fixedBet(), 200);
+        BlackjackLimits limits = banker.limitsFrom(settings);
+        assertEquals(200, limits.minimum());
+        assertEquals(200, limits.maximum());
+        assertTrue(banker.bankerPlaysByHand(settings));
+        assertFalse(banker.bankerWinsTies(settings));
+        assertTrue(banker.settingsProblem(settings).isEmpty());
+
+        TableSettings homeRules = settings.with(banker.bankerPlays(), 1).with(banker.ties(), 1);
+        assertFalse(banker.bankerPlaysByHand(homeRules));
+        assertTrue(banker.bankerWinsTies(homeRules));
+    }
+
+    @Test
+    void everyFormatsSettingsAreItsOwn() {
+        for (BlackjackGame game : List.of(GAME, BlackjackGame.tournament(), BlackjackGame.banker())) {
+            for (SettingSpec spec : game.settings()) {
+                assertTrue(spec.id().startsWith(game.id() + "."), spec.id());
+            }
+        }
+    }
 }

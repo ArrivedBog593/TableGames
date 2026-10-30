@@ -50,6 +50,12 @@ import java.util.Optional;
 public class TableConfigScreen extends Screen {
 
     private static final int PANEL_W = 300;
+    /**
+     * Past this many settings the rows go in two columns, side by side in a
+     * wider panel: one column of ten is taller than a screen at a large GUI scale.
+     */
+    private static final int ONE_COLUMN_MAX = 6;
+    private static final int TWO_COLUMN_W = 460;
     private static final int PAD = 8;
     private static final int CONTROL_H = 16;
     private static final int GAME_ROW_Y = 20;
@@ -104,9 +110,10 @@ public class TableConfigScreen extends Screen {
     private int left;
     private int top;
     private int panelHeight;
+    private int panelWidth = PANEL_W;
 
     /** One setting on screen. {@code box} is null unless the spec is an amount. */
-    private record Row(SettingSpec spec, int y, EditBox box) {
+    private record Row(SettingSpec spec, int x, int y, EditBox box) {
     }
 
     /** What the draft amounts to: the settings to send, or why not. */
@@ -143,17 +150,22 @@ public class TableConfigScreen extends Screen {
         List<SettingSpec> specs = specs();
         // One row's worth of height even with nothing to set, for the line
         // that says so, and room under the rows for a two-line message.
-        panelHeight = SETTINGS_Y + Math.max(1, specs.size()) * ROW_H + 50;
-        left = (width - PANEL_W) / 2;
+        int columns = specs.size() > ONE_COLUMN_MAX ? 2 : 1;
+        int perColumn = Math.max(1, (specs.size() + columns - 1) / columns);
+        panelWidth = columns == 1 ? PANEL_W : TWO_COLUMN_W;
+        int columnW = (panelWidth - PAD) / columns;
+        panelHeight = SETTINGS_Y + perColumn * ROW_H + 50;
+        left = (width - panelWidth) / 2;
         top = (height - panelHeight) / 2;
 
         rows.clear();
         for (int i = 0; i < specs.size(); i++) {
             SettingSpec spec = specs.get(i);
-            int y = top + SETTINGS_Y + i * ROW_H;
+            int x = left + PAD + (i / perColumn) * columnW;
+            int y = top + SETTINGS_Y + (i % perColumn) * ROW_H;
             EditBox box = null;
             if (spec instanceof SettingSpec.Amount) {
-                box = new EditBox(font, left + PAD, y + 11, AMOUNT_W, CONTROL_H,
+                box = new EditBox(font, x, y + 11, AMOUNT_W, CONTROL_H,
                         Component.translatable(spec.translationKey()));
                 // Thirteen digits covers the largest balance the economy holds.
                 box.setMaxLength(13);
@@ -165,7 +177,7 @@ public class TableConfigScreen extends Screen {
             } else {
                 pickDrafts.computeIfAbsent(spec.id(), id -> stored.get(spec));
             }
-            rows.add(new Row(spec, y, box));
+            rows.add(new Row(spec, x, y, box));
         }
     }
 
@@ -217,7 +229,7 @@ public class TableConfigScreen extends Screen {
     public void renderBackground(@NotNull GuiGraphics graphics, int mouseX, int mouseY,
                                  float partialTick) {
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
-        Panels.panel(graphics, left, top, left + PANEL_W, top + panelHeight);
+        Panels.panel(graphics, left, top, left + panelWidth, top + panelHeight);
     }
 
     @Override
@@ -231,7 +243,7 @@ public class TableConfigScreen extends Screen {
 
         super.render(graphics, mouseX, mouseY, partialTick);
 
-        graphics.drawString(font, title, left + (PANEL_W - font.width(title)) / 2, top + 7,
+        graphics.drawString(font, title, left + (panelWidth - font.width(title)) / 2, top + 7,
                 Panels.LABEL_TEXT, false);
 
         renderGameRow(graphics);
@@ -245,7 +257,7 @@ public class TableConfigScreen extends Screen {
                 .map(chosen -> (Component) Component.translatable(chosen.translationKey()))
                 .orElse(Component.literal(gameId));
         Component line = Component.translatable("tablegames.config.game_named", name);
-        graphics.drawString(font, line, left + (PANEL_W - font.width(line)) / 2,
+        graphics.drawString(font, line, left + (panelWidth - font.width(line)) / 2,
                 top + GAME_ROW_Y, 0xFF3A5B8A, false);
     }
 
@@ -258,17 +270,17 @@ public class TableConfigScreen extends Screen {
         for (Row row : rows) {
             SettingSpec spec = row.spec();
             graphics.drawString(font, Component.translatable(spec.translationKey()),
-                    left + PAD, row.y(), Panels.LABEL_TEXT, false);
+                    row.x(), row.y(), Panels.LABEL_TEXT, false);
 
             int controlY = row.y() + 11;
             if (spec instanceof SettingSpec.Amount) {
                 Component fallback = Component.translatable("tablegames.config.default",
                         CreditFormat.of(spec.defaultValue()));
-                graphics.drawString(font, fallback, left + PAD + AMOUNT_W + 8, controlY + 4,
+                graphics.drawString(font, fallback, row.x() + AMOUNT_W + 8, controlY + 4,
                         HINT, false);
                 continue;
             }
-            int x = left + PAD;
+            int x = row.x();
             Panels.button(graphics, x, controlY, TOGGLE_W, CONTROL_H, 0xFF6A6A6A,
                     isOver(mouseX, mouseY, x, controlY, TOGGLE_W, CONTROL_H));
             Component shown = pickLabel(spec, pickDrafts.get(spec.id()));
@@ -318,7 +330,7 @@ public class TableConfigScreen extends Screen {
 
     /** Wrapped to the panel, at most two lines, sitting just above the buttons. */
     private void drawMessage(GuiGraphics graphics, Component message, int color) {
-        List<FormattedCharSequence> lines = font.split(message, PANEL_W - 2 * PAD);
+        List<FormattedCharSequence> lines = font.split(message, panelWidth - 2 * PAD);
         int count = Math.min(2, lines.size());
         int y = footerY() - 4 - count * 10;
         for (int i = 0; i < count; i++) {
@@ -339,7 +351,7 @@ public class TableConfigScreen extends Screen {
     /** The buttons spread across the bottom, right aligned. */
     private int footerButtonX(int index) {
         int fromRight = BUTTON_COUNT - index;
-        return left + PANEL_W - PAD - fromRight * BUTTON_W - (fromRight - 1) * BUTTON_GAP;
+        return left + panelWidth - PAD - fromRight * BUTTON_W - (fromRight - 1) * BUTTON_GAP;
     }
 
     // --- Input ------------------------------------------------------------------
@@ -355,7 +367,7 @@ public class TableConfigScreen extends Screen {
                 continue;
             }
             int controlY = row.y() + 11;
-            if (isOver(mx, my, left + PAD, controlY, TOGGLE_W, CONTROL_H)) {
+            if (isOver(mx, my, row.x(), controlY, TOGGLE_W, CONTROL_H)) {
                 cycle(row.spec(), back);
                 click();
                 return true;

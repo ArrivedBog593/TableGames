@@ -24,7 +24,8 @@ import org.jetbrains.annotations.NotNull;
  *
  * @param kind     what they are asking for
  * @param tablePos which table; verified against reach before use
- * @param amount   credits to add to the opening wager; zero for everything else
+ * @param amount   credits, or tournament chips, to add to the opening wager; zero for
+ *                 everything else
  */
 public record BlackjackActionPayload(int kind, BlockPos tablePos, long amount)
         implements CustomPacketPayload {
@@ -37,6 +38,8 @@ public record BlackjackActionPayload(int kind, BlockPos tablePos, long amount)
     public static final int KIND_SPLIT = 5;
     public static final int KIND_INSURE = 6;
     public static final int KIND_DECLINE_INSURANCE = 7;
+    public static final int KIND_CONFIRM_BET = 8;
+    public static final int KIND_WITHDRAW = 9;
 
     /** As at roulette: generous enough for lag, tight enough that nobody plays from another room. */
     private static final double REACH_SQUARED = 64.0;
@@ -93,6 +96,8 @@ public record BlackjackActionPayload(int kind, BlockPos tablePos, long amount)
                 case KIND_SPLIT -> cards.act(player, new BlackjackAction.Split());
                 case KIND_INSURE -> cards.act(player, new BlackjackAction.Insurance(true));
                 case KIND_DECLINE_INSURANCE -> cards.act(player, new BlackjackAction.Insurance(false));
+                case KIND_CONFIRM_BET -> cards.confirmBet(player);
+                case KIND_WITHDRAW -> cards.withdraw(player);
                 default -> null;
             };
             TableNoticePayload.tell(player, refusal);

@@ -50,6 +50,8 @@ public final class Games {
         onTable(RouletteGame.european(), TableVariant.WHEEL);
         onTable(RouletteGame.american(), TableVariant.WHEEL);
         onTable(BlackjackGame.standard(), TableVariant.CARDS);
+        onTable(BlackjackGame.tournament(), TableVariant.CARDS);
+        onTable(BlackjackGame.banker(), TableVariant.CARDS);
         slots = inMachine(SlotsGame.standard());
         REGISTRY.freeze();
         ready = true;
