@@ -1,7 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.house;
 
-import com.github.arrivedbog593.tablegames.economy.platform.EconomyData;
-import com.github.arrivedbog593.tablegames.economy.platform.StaffRank;
+import com.github.arrivedbog593.economycore.platform.EconomyData;
+import com.github.arrivedbog593.economycore.platform.StaffRank;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -10,9 +10,10 @@ import net.minecraft.server.level.ServerPlayer;
  * <p>
  * The ranks are the economy's, and the economy grants them nothing outside
  * its own blocks. Whatever they are worth here is decided here: an
- * administrator may step in at any table and run the house — its bank, its
- * risk limits — the way an operator can. A moderator runs the shop and the
- * cashier and has no say in either.
+ * administrator may step in at any table and run the house — its risk limits
+ * and reserve — the way an operator can. The bank itself is EconomyCore's,
+ * and EconomyCore lets administrators run it too. A moderator runs the shop
+ * and the exchange and has no say in any of it.
  * <p>
  * Kept on this side on purpose. An economy that knew what its ranks unlock
  * in the casino would have to know about the casino, and a mod built on the

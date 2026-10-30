@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
-import com.github.arrivedbog593.tablegames.economy.platform.item.AdminKeyItem;
+import com.github.arrivedbog593.economycore.platform.item.AdminKeyItem;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.github.arrivedbog593.tablegames.platform.item.TableKeyItem;

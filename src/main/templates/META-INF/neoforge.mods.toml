@@ -65,6 +65,15 @@ ordering = "NONE"
 side = "BOTH"
 # Here's another dependency
 [[dependencies."${mod_id}"]]
+modId = "economycore"
+type = "required"
+versionRange = "${economycore_version_range}"
+# Loaded first: the casino registers its transaction types and its bank
+# against EconomyCore while it loads.
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies."${mod_id}"]]
 modId = "minecraft"
 type = "required"
 # This version range declares a minimum of the current minecraft version up to but not including the next major version

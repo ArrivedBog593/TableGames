@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
-import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
+import com.github.arrivedbog593.economycore.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetLimits;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.BetType;
 import com.github.arrivedbog593.tablegames.engine.games.roulette.Pocket;

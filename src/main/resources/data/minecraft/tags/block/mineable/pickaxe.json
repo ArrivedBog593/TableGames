@@ -1,8 +1,6 @@
 {
   "replace": false,
   "values": [
-    "tablegames:cashier",
-    "tablegames:shop",
     "tablegames:slot_machine"
   ]
 }

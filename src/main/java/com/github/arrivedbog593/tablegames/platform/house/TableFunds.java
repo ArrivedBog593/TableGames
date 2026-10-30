@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.house;
 
-import com.github.arrivedbog593.tablegames.economy.engine.PlayerCommitments;
+import com.github.arrivedbog593.economycore.engine.PlayerCommitments;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
 import net.minecraft.server.MinecraftServer;

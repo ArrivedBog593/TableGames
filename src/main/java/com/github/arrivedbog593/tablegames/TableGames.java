@@ -1,8 +1,9 @@
 package com.github.arrivedbog593.tablegames;
 
-import com.github.arrivedbog593.tablegames.economy.platform.EconomyModule;
+import com.github.arrivedbog593.economycore.platform.ServerBank;
 import com.github.arrivedbog593.tablegames.engine.house.HouseTransactions;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
+import com.github.arrivedbog593.tablegames.platform.house.OutcomeSettler;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlockEntities;
 import com.github.arrivedbog593.tablegames.platform.registry.ModBlocks;
 import com.github.arrivedbog593.tablegames.platform.registry.ModCreativeTabs;
@@ -31,9 +32,6 @@ public final class TableGames {
 
     @SuppressWarnings("unused")
     public TableGames(IEventBus modEventBus, ModContainer container) {
-        // The economy first, standing in for the mod it will become: TableGames
-        // depends on it, so it is there before anything here is.
-        EconomyModule.register(modEventBus);
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
         ModBlockEntities.register(modEventBus);
@@ -46,5 +44,11 @@ public final class TableGames {
         // Before the server starts: crash recovery reads the log then, and a
         // wager nobody had registered yet would not be replayed.
         HouseTransactions.bootstrap();
+        // The house pays out of the server bank, so it switches the bank on —
+        // and with it, what the server takes in funds the tables, unless the
+        // owner configured otherwise. What the tables have riding on live
+        // rounds is promised out of it, so staff cannot withdraw it.
+        ServerBank.enable(MOD_ID);
+        ServerBank.promise(MOD_ID, () -> OutcomeSettler.exposure().total());
     }
 }

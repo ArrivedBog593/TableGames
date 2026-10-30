@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.house;
 
-import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
+import com.github.arrivedbog593.economycore.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.engine.table.BuyIn;
 import net.minecraft.network.chat.Component;
 

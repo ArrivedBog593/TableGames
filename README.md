@@ -1,38 +1,32 @@
 # TableGames
 
 A [NeoForge](https://neoforged.net/) 1.21.1 mod that adds casino-style table games to
-Minecraft, backed by a configurable item-to-credit economy that works with any mod's
-items as currency.
+Minecraft, played with the credits of [EconomyCore](../EconomyCore) — accounts, an
+exchange that turns any item into credits, and a shop.
 
-Roulette (European and American) is playable today. Blackjack, poker, slots, and a
+Roulette (European and American) and slot machines are playable today. Blackjack, poker, and a
 handful of non-betting games (Uno, dominó, rummy) are planned — see the architecture
 notes below for what already supports adding them.
 
 ## Highlights
 
-- **Item ↔ credit economy**, configurable in-game: any item id converts to credits at a
-  value an operator sets, with an optional resale spread that funds the house bankroll.
-  No dependency on any specific currency mod — items are addressed by id as plain text.
-- **Anti-exploit validation**: proposed conversion values are checked against real
-  crafting recipes before they're accepted, so a set of prices that would let players
-  mint credits by crafting is refused, not silently exploited.
 - **Audited settlement**: every hand is checked against real, live balances and the
   house bankroll before a single credit moves, and applied all at once — a hand never
   ends with half a payout distributed.
 - **A bankroll that actually protects itself**: table maximums are derived from the
   house balance, not configured by hand, and shrink automatically if the house is
-  losing. `HouseExposure` and `PlayerCommitments` track what every table and every
+  losing. The bank is an account in EconomyCore's ledger, and receives the
+  server's income — what the shop sells, what the exchange's surcharge earns. `HouseExposure` and `PlayerCommitments` track what every table and every
   player has riding on rounds that haven't settled, so nobody can double-commit the
   same credits across two tables.
 - **A player-owned table**: whoever places a table configures it, and can share that
   right with specific guests, without needing an operator.
-- **Crash-safe accounting**: a append-only transaction log lets balances recover after
-  a crash between two saves, verified by actually killing the process mid-run.
 
 ## Requirements
 
 - Minecraft 1.21.1
-- [NeoForge](https://neoforged.net/) 21.1.238+
+- [NeoForge](https://neoforged.net/) 21.1.248+
+- [EconomyCore](../EconomyCore) 0.1.0+
 - Java 21
 
 ## Architecture
@@ -50,6 +44,9 @@ a server. Adding a new game means writing one `Game` and one `GameSession` in `e
 written against those two abstractions and don't change.
 
 ## Building and running
+
+EconomyCore comes from Maven local during development: build it once with
+`./gradlew publishToMavenLocal` in its own project, and again after changing it.
 
 ```
 ./gradlew build          # compile and run the JUnit suite
@@ -72,18 +69,18 @@ packet.
 ## Trying it out
 
 ```
-/tablegames help                  # the full command directory, paginated and clickable
+/tablegames help                  # the casino's commands; /economycore help for the economy's
 /tablegames house add 1000000     # tables won't open with an empty bankroll
 /give @s tablegames:table
 /tablegames table set roulette    # while looking at the table
-/tablegames admin give <player>   # hands out an administration card
+/economycore staff add <player> admin   # staff who can run the house and every table
 ```
 
 Vanilla's spawn protection blocks non-operators from using any block near spawn —
 build away from it, or set `spawn-protection=0` in `server.properties`.
 
-Player balances live in `<world>/data/tablegames_credits.dat`, economy configuration in
-`tablegames_economy.dat`, and the recoverable transaction log under `<world>/logs/`.
+The house's risk settings live in `<world>/data/tablegames_house.dat`. Balances, prices
+and the transaction log are EconomyCore's.
 
 ## License
 

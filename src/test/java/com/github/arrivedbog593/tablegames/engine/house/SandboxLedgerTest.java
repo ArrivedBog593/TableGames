@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.engine.house;
 
-import com.github.arrivedbog593.tablegames.economy.engine.CreditAccount;
+import com.github.arrivedbog593.economycore.engine.CreditAccount;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
 import com.github.arrivedbog593.tablegames.engine.session.Payout;
 import org.junit.jupiter.api.Test;

@@ -1,12 +1,9 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
-import com.github.arrivedbog593.tablegames.economy.engine.CreditAccount;
-import com.github.arrivedbog593.tablegames.economy.engine.CreditValueTable;
-import com.github.arrivedbog593.tablegames.economy.engine.TransactionType;
-import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
-import com.github.arrivedbog593.tablegames.economy.platform.CreditStorage;
-import com.github.arrivedbog593.tablegames.economy.platform.EconomyData;
-import com.github.arrivedbog593.tablegames.economy.platform.EconomyEvents;
+import com.github.arrivedbog593.economycore.engine.CreditAccount;
+import com.github.arrivedbog593.economycore.engine.CreditValueTable;
+import com.github.arrivedbog593.economycore.platform.CreditFormat;
+import com.github.arrivedbog593.economycore.platform.EconomyData;
 import com.github.arrivedbog593.tablegames.engine.house.HouseBankroll;
 import com.github.arrivedbog593.tablegames.engine.house.HouseExposure;
 import com.github.arrivedbog593.tablegames.platform.house.HouseSettings;
@@ -50,21 +47,6 @@ public final class HouseCommands {
         root.then(Commands.literal("house")
                 .requires(HouseStaff::mayRunTheHouse)
                 .executes(context -> status(context.getSource()))
-                .then(Commands.literal("add")
-                        .then(Commands.argument("amount",
-                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
-                                .executes(context -> add(context.getSource(),
-                                        LongArgumentType.getLong(context, "amount")))))
-                .then(Commands.literal("take")
-                        .then(Commands.argument("amount",
-                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
-                                .executes(context -> take(context.getSource(),
-                                        LongArgumentType.getLong(context, "amount")))))
-                .then(Commands.literal("set")
-                        .then(Commands.argument("amount",
-                                        LongArgumentType.longArg(0, CreditAccount.MAX_BALANCE))
-                                .executes(context -> set(context.getSource(),
-                                        LongArgumentType.getLong(context, "amount")))))
                 .then(Commands.literal("exposure")
                         .executes(context -> showExposure(context.getSource()))
                         .then(Commands.argument("percent", IntegerArgumentType.integer(1, 100))
@@ -76,13 +58,7 @@ public final class HouseCommands {
                                         LongArgumentType.longArg(0, CreditAccount.MAX_BALANCE))
                                 .executes(context -> reserve(context.getSource(),
                                         LongArgumentType.getLong(context, "credits")))))
-                .then(Commands.literal("spread")
-                        .executes(context -> showSpread(context.getSource()))
-                        .then(Commands.argument("percent", IntegerArgumentType.integer(
-                                        CreditValueTable.NO_SPREAD,
-                                        CreditValueTable.MAX_SPREAD_PERCENT))
-                                .executes(context -> spread(context.getSource(),
-                                        IntegerArgumentType.getInteger(context, "percent")))))
+
                 .then(Commands.literal("plan")
                         .then(Commands.argument("maxbet",
                                         LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
@@ -160,69 +136,6 @@ public final class HouseCommands {
         return 1;
     }
 
-    private static int add(CommandSourceStack source, long amount) {
-        CreditStorage storage = CreditStorage.get(source.getServer());
-        storage.creditHouse(amount);
-        EconomyEvents.recordHouse(storage, TransactionType.ADMIN_GIVE, amount,
-                storage.houseBalance(), "seeded by " + source.getTextName());
-        announce(source, Component.translatable("tablegames.house.added",
-                        format(amount), format(storage.houseBalance())),
-                Component.translatable("tablegames.house.added_by", source.getDisplayName(),
-                        format(amount), format(storage.houseBalance())));
-        return status(source);
-    }
-
-    private static int take(CommandSourceStack source, long amount) {
-        CreditStorage storage = CreditStorage.get(source.getServer());
-
-        // Not below what the tables are holding. Those credits are promised
-        // to spins that have not landed yet, and taking them leaves the house
-        // owing money it no longer has: the settlement audit then refuses to
-        // pay a winner and the whole round is handed back. Closing new bets
-        // was never going to be enough on its own, because it is this
-        // withdrawal that creates the shortfall.
-        long committed = OutcomeSettler.exposure().total();
-        long takeable = Math.max(0L, storage.houseBalance() - committed);
-        if (amount > takeable) {
-            source.sendFailure(Component.translatable(
-                    "tablegames.house.cannot_take_committed",
-                    format(committed), format(takeable)));
-            return 0;
-        }
-
-        if (!storage.debitHouse(amount)) {
-            source.sendFailure(Component.translatable(
-                    "tablegames.house.cannot_take", format(storage.houseBalance())));
-            return 0;
-        }
-        EconomyEvents.recordHouse(storage, TransactionType.ADMIN_TAKE, -amount,
-                storage.houseBalance(), "withdrawn by " + source.getTextName());
-        announce(source, Component.translatable("tablegames.house.taken",
-                        format(amount), format(storage.houseBalance())),
-                Component.translatable("tablegames.house.taken_by", source.getDisplayName(),
-                        format(amount), format(storage.houseBalance())));
-        return status(source);
-    }
-
-    private static int set(CommandSourceStack source, long amount) {
-        CreditStorage storage = CreditStorage.get(source.getServer());
-        long before = storage.houseBalance();
-        long delta = amount - before;
-        if (delta > 0) {
-            storage.creditHouse(delta);
-        } else if (delta < 0) {
-            storage.debitHouse(-delta);
-        }
-        if (delta != 0) {
-            EconomyEvents.recordHouse(storage,
-                    delta > 0 ? TransactionType.ADMIN_GIVE : TransactionType.ADMIN_TAKE,
-                    delta, storage.houseBalance(), "set by " + source.getTextName());
-        }
-        announce(source, Component.translatable("tablegames.house.set", format(amount)),
-                Component.translatable("tablegames.house.set_by", source.getDisplayName(), format(amount)));
-        return status(source);
-    }
-
     // --- The settings, read back ------------------------------------------------
     //
     // Each setting answers when it is typed without a value, instead of the
@@ -250,13 +163,6 @@ public final class HouseCommands {
                     format(effective)), false);
         }
         return (int) Math.min(Integer.MAX_VALUE, configured);
-    }
-
-    private static int showSpread(CommandSourceStack source) {
-        int percent = EconomyData.get(source.getServer()).spreadPercent();
-        source.sendSuccess(() -> Component.translatable("tablegames.house.spread_show",
-                percent, CreditValueTable.NO_SPREAD), false);
-        return percent;
     }
 
     private static int exposure(CommandSourceStack source, int percent) {
@@ -296,30 +202,6 @@ public final class HouseCommands {
                     "tablegames.house.plan_short",
                     format(needed - bankroll.balance())).withStyle(ChatFormatting.YELLOW), false);
         }
-        return 1;
-    }
-
-    /**
-     * Sets the surcharge on buying items back.
-     * <p>
-     * The house's third source of income, after losing bets and shop sales,
-     * and the only one that works on a server with no shop at all. It is also
-     * the only sink this economy has for credits minted at the cashier: every
-     * sale creates them and, without this, nothing but the shop ever removed
-     * any.
-     */
-    private static int spread(CommandSourceStack source, int percent) {
-        EconomyData data = EconomyData.get(source.getServer());
-        data.setSpreadPercent(percent);
-        EconomyEvents.economy().rebuild(source.getServer());
-        boolean off = percent == CreditValueTable.NO_SPREAD;
-        announce(source, off
-                        ? Component.translatable("tablegames.house.spread_off")
-                        : Component.translatable("tablegames.house.spread_set", percent),
-                off
-                        ? Component.translatable("tablegames.house.spread_off_by", source.getDisplayName())
-                        : Component.translatable("tablegames.house.spread_set_by", source.getDisplayName(),
-                                percent));
         return 1;
     }
 

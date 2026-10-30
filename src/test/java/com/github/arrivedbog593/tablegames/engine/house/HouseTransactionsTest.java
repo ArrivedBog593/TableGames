@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.engine.house;
 
-import com.github.arrivedbog593.tablegames.economy.engine.TransactionType;
+import com.github.arrivedbog593.economycore.engine.TransactionType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

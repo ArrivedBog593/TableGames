@@ -1,7 +1,7 @@
 package com.github.arrivedbog593.tablegames.client;
 
-import com.github.arrivedbog593.tablegames.economy.client.Panels;
-import com.github.arrivedbog593.tablegames.economy.platform.CreditFormat;
+import com.github.arrivedbog593.economycore.client.Panels;
+import com.github.arrivedbog593.economycore.platform.CreditFormat;
 import com.github.arrivedbog593.tablegames.platform.network.CloseTablePayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;

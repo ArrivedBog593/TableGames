@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
-import com.github.arrivedbog593.tablegames.economy.platform.command.Pagination;
+import com.github.arrivedbog593.economycore.platform.command.Pagination;
 import com.github.arrivedbog593.tablegames.platform.house.HouseStaff;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -43,23 +43,15 @@ public final class HelpCommands {
     }
 
     private static final Predicate<CommandSourceStack> EVERYONE = source -> true;
-    private static final Predicate<CommandSourceStack> OPERATORS = source -> source.hasPermission(2);
     private static final Predicate<CommandSourceStack> HOUSE = HouseStaff::mayRunTheHouse;
 
     /**
      * Grouped the way the commands are, and in the order somebody meets them:
-     * their own credits first, then a table, then the machinery behind the
-     * casino.
+     * a table first, then the machinery behind the casino. The economy's own
+     * commands — credits, the exchange, the shop, the staff — belong to
+     * EconomyCore, which lists them in its own help.
      */
     private static final List<Entry> ENTRIES = List.of(
-            new Entry("/credits", "tablegames.help.credits", EVERYONE),
-            new Entry("/credits convert", "tablegames.help.credits_convert", EVERYONE),
-            new Entry("/credits redeem <item> [count]", "tablegames.help.credits_redeem", EVERYONE),
-            new Entry("/credits pay <player> <amount>", "tablegames.help.credits_pay", EVERYONE),
-            new Entry("/credits give <player> <amount>", "tablegames.help.credits_give", OPERATORS),
-            new Entry("/credits set <player> <amount>", "tablegames.help.credits_set", OPERATORS),
-            new Entry("/credits house", "tablegames.help.credits_house", OPERATORS),
-
             new Entry("/tablegames table info", "tablegames.help.table_info", EVERYONE),
             new Entry("/tablegames table games", "tablegames.help.table_games", EVERYONE),
             new Entry("/tablegames table set <game>", "tablegames.help.table_set", EVERYONE),
@@ -76,34 +68,13 @@ public final class HelpCommands {
                     "tablegames.help.table_untrust", EVERYONE),
 
             new Entry("/tablegames house", "tablegames.help.house", HOUSE),
-            new Entry("/tablegames house add <amount>", "tablegames.help.house_add", HOUSE),
-            new Entry("/tablegames house take <amount>", "tablegames.help.house_take", HOUSE),
-            new Entry("/tablegames house set <amount>", "tablegames.help.house_set", HOUSE),
             new Entry("/tablegames house exposure [percent]",
                     "tablegames.help.house_exposure", HOUSE),
             new Entry("/tablegames house reserve [credits]",
                     "tablegames.help.house_reserve", HOUSE),
-            new Entry("/tablegames house spread [percent]", "tablegames.help.house_spread", HOUSE),
             new Entry("/tablegames house plan <maxbet>", "tablegames.help.house_plan", HOUSE),
 
-            new Entry("/tablegames economy list [page]", "tablegames.help.economy_list", OPERATORS),
-            new Entry("/tablegames economy set <credits>", "tablegames.help.economy_set", OPERATORS),
-            new Entry("/tablegames economy remove <item>",
-                    "tablegames.help.economy_remove", OPERATORS),
-            new Entry("/tablegames economy check", "tablegames.help.economy_check", OPERATORS),
-
-            new Entry("/tablegames shop list [page]", "tablegames.help.shop_list", OPERATORS),
-            new Entry("/tablegames shop add <price>", "tablegames.help.shop_add", OPERATORS),
-            new Entry("/tablegames shop price <entry> <price>", "tablegames.help.shop_price", OPERATORS),
-            new Entry("/tablegames shop remove <entry>", "tablegames.help.shop_remove", OPERATORS),
-
-            new Entry("/tablegames staff key", "tablegames.help.staff_key", EVERYONE),
-            new Entry("/tablegames staff list", "tablegames.help.staff_list", OPERATORS),
-            new Entry("/tablegames staff add <player> moderator",
-                    "tablegames.help.staff_add_moderator", OPERATORS),
-            new Entry("/tablegames staff add <player> admin",
-                    "tablegames.help.staff_add_admin", OPERATORS),
-            new Entry("/tablegames staff remove <player>", "tablegames.help.staff_remove", OPERATORS));
+            new Entry("/economycore help", "tablegames.help.economy", EVERYONE));
 
     private HelpCommands() {
     }

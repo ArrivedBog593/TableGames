@@ -1,10 +1,11 @@
 package com.github.arrivedbog593.tablegames.platform.house;
 
-import com.github.arrivedbog593.tablegames.economy.engine.CreditAccount;
-import com.github.arrivedbog593.tablegames.economy.engine.PlayerCommitments;
-import com.github.arrivedbog593.tablegames.economy.platform.Commitments;
-import com.github.arrivedbog593.tablegames.economy.platform.CreditStorage;
-import com.github.arrivedbog593.tablegames.economy.platform.EconomyEvents;
+import com.github.arrivedbog593.economycore.engine.CreditAccount;
+import com.github.arrivedbog593.economycore.engine.PlayerCommitments;
+import com.github.arrivedbog593.economycore.platform.Commitments;
+import com.github.arrivedbog593.economycore.platform.CreditStorage;
+import com.github.arrivedbog593.economycore.platform.EconomyEvents;
+import com.github.arrivedbog593.economycore.platform.ServerBank;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.house.HouseBankroll;
 import com.github.arrivedbog593.tablegames.engine.house.HouseExposure;
@@ -125,7 +126,7 @@ public final class OutcomeSettler {
             storage.withdraw(payout.playerId(), -payout.delta());
         }
 
-        if (verdict.housePays() && !storage.debitHouse(-verdict.houseDelta())) {
+        if (verdict.housePays() && !ServerBank.debit(storage, -verdict.houseDelta())) {
             // The audit already checked this, so reaching here means the
             // bankroll moved underneath us. Undo the debits and refuse.
             for (Payout payout : debits) {
@@ -149,7 +150,7 @@ public final class OutcomeSettler {
         }
 
         if (verdict.houseDelta() > 0) {
-            storage.creditHouse(verdict.houseDelta());
+            ServerBank.credit(storage, verdict.houseDelta());
         }
 
         // Every credit has moved. Only now does any of it reach the log.
@@ -170,12 +171,12 @@ public final class OutcomeSettler {
                     payout.delta(), storage.balanceOf(payout.playerId()), context);
         }
         if (verdict.houseDelta() > 0) {
-            EconomyEvents.recordHouse(storage,
+            ServerBank.record(storage,
                     outcome.rake() > 0 ? HouseTransactions.RAKE : HouseTransactions.PAYOUT,
-                    verdict.houseDelta(), storage.houseBalance(), context);
+                    verdict.houseDelta(), context);
         } else if (verdict.housePays()) {
-            EconomyEvents.recordHouse(storage, HouseTransactions.HOUSE_PAYOUT,
-                    verdict.houseDelta(), storage.houseBalance(), context);
+            ServerBank.record(storage, HouseTransactions.HOUSE_PAYOUT,
+                    verdict.houseDelta(), context);
         }
 
         return Result.applied(verdict.houseDelta());
@@ -223,7 +224,7 @@ public final class OutcomeSettler {
      */
     public static HouseBankroll bankroll(MinecraftServer server) {
         HouseSettings settings = HouseSettings.get(server);
-        return new HouseBankroll(CreditStorage.get(server).houseBalance(),
+        return new HouseBankroll(ServerBank.balance(CreditStorage.get(server)),
                 settings.exposurePercent(), settings.minimumReserve())
                 .withReserveAtLeast(EXPOSURE.total());
     }
