@@ -1,7 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.house;
 
-import com.github.arrivedbog593.economycore.engine.PlayerCommitments;
-import com.github.arrivedbog593.economycore.platform.CreditStorage;
+import com.github.arrivedbog593.economycore.api.Credits;
+import com.github.arrivedbog593.economycore.api.PlayerCommitments;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
 import net.minecraft.server.MinecraftServer;
@@ -13,7 +13,7 @@ import java.util.UUID;
  * registries, the transaction log.
  * <p>
  * Nothing but a pass-through. Every table used to ask these things of
- * {@link OutcomeSettler} and {@link CreditStorage} directly, and still gets
+ * {@link OutcomeSettler} and {@link Credits} directly, and still gets
  * exactly the same answers, from exactly the same places.
  */
 public enum RealFunds implements TableFunds {
@@ -27,7 +27,7 @@ public enum RealFunds implements TableFunds {
 
     @Override
     public long balanceOf(MinecraftServer server, UUID playerId) {
-        return CreditStorage.get(server).balanceOf(playerId);
+        return Credits.balance(server, playerId);
     }
 
     @Override

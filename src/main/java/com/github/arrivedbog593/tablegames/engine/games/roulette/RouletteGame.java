@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.engine.games.roulette;
 
-import com.github.arrivedbog593.economycore.engine.CreditAccount;
+import com.github.arrivedbog593.economycore.api.Credits;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.session.GameSession;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
@@ -133,7 +133,7 @@ public record RouletteGame(String id, RouletteWheel wheel, BetLimits limits)
     /** The most a stack may hold, where zero lets a player bring whatever they have. */
     public SettingSpec.Amount buyInMaximum() {
         return new SettingSpec.Amount(
-                id + ".buy_in_max", BuyIn.UNLIMITED, BuyIn.UNLIMITED, CreditAccount.MAX_BALANCE);
+                id + ".buy_in_max", BuyIn.UNLIMITED, BuyIn.UNLIMITED, Credits.MAX_BALANCE);
     }
 
     /**
@@ -204,12 +204,12 @@ public record RouletteGame(String id, RouletteWheel wheel, BetLimits limits)
      * that breaks the arithmetic doing the refusing.
      */
     private SettingSpec.Amount minimumSpec(String name, long fallback) {
-        return new SettingSpec.Amount(id + "." + name, fallback, 1, CreditAccount.MAX_BALANCE);
+        return new SettingSpec.Amount(id + "." + name, fallback, 1, Credits.MAX_BALANCE);
     }
 
     private SettingSpec.Amount maximumSpec(String name, long fallback) {
         return new SettingSpec.Amount(
-                id + "." + name, fallback, BetLimits.UNLIMITED, CreditAccount.MAX_BALANCE);
+                id + "." + name, fallback, BetLimits.UNLIMITED, Credits.MAX_BALANCE);
     }
 
     private static boolean belowItsFloor(TableSettings settings,

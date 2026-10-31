@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.engine.house;
 
-import com.github.arrivedbog593.economycore.engine.TransactionType;
+import com.github.arrivedbog593.economycore.api.TransactionType;
 
 /**
  * The reasons credits move that only the casino has.

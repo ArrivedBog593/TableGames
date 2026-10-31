@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames;
 
-import com.github.arrivedbog593.economycore.platform.ServerBank;
+import com.github.arrivedbog593.economycore.api.Bank;
 import com.github.arrivedbog593.tablegames.engine.house.HouseTransactions;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.github.arrivedbog593.tablegames.platform.house.OutcomeSettler;
@@ -48,7 +48,7 @@ public final class TableGames {
         // and with it, what the server takes in funds the tables, unless the
         // owner configured otherwise. What the tables have riding on live
         // rounds is promised out of it, so staff cannot withdraw it.
-        ServerBank.enable(MOD_ID);
-        ServerBank.promise(MOD_ID, () -> OutcomeSettler.exposure().total());
+        Bank.enable(MOD_ID);
+        Bank.promise(MOD_ID, () -> OutcomeSettler.exposure().total());
     }
 }

@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.engine.games.blackjack;
 
-import com.github.arrivedbog593.economycore.engine.CreditAccount;
+import com.github.arrivedbog593.economycore.api.Credits;
 import com.github.arrivedbog593.tablegames.engine.card.Shoe;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.session.GameSession;
@@ -140,13 +140,13 @@ public record BlackjackGame(String id, BlackjackFormat format) implements Game {
     public SettingSpec.Amount minimumWager() {
         return new SettingSpec.Amount(id + ".bet_min",
                 format == BlackjackFormat.TOURNAMENT ? DEFAULT_TOURNAMENT_MINIMUM : DEFAULT_MINIMUM_BET,
-                1, CreditAccount.MAX_BALANCE);
+                1, Credits.MAX_BALANCE);
     }
 
     /** Zero posts no ceiling of the table's own; against the house, the bankroll's still binds. */
     public SettingSpec.Amount maximumWager() {
         return new SettingSpec.Amount(id + ".bet_max", BlackjackLimits.UNLIMITED,
-                BlackjackLimits.UNLIMITED, CreditAccount.MAX_BALANCE);
+                BlackjackLimits.UNLIMITED, Credits.MAX_BALANCE);
     }
 
     public SettingSpec.Choice decks() {
@@ -168,12 +168,12 @@ public record BlackjackGame(String id, BlackjackFormat format) implements Game {
     public SettingSpec.Amount buyInMinimum() {
         return new SettingSpec.Amount(id + ".buy_in_min",
                 format == BlackjackFormat.BANKER ? DEFAULT_BANKER_BUY_IN : DEFAULT_BUY_IN_MINIMUM,
-                1, CreditAccount.MAX_BALANCE);
+                1, Credits.MAX_BALANCE);
     }
 
     public SettingSpec.Amount buyInMaximum() {
         return new SettingSpec.Amount(
-                id + ".buy_in_max", BuyIn.UNLIMITED, BuyIn.UNLIMITED, CreditAccount.MAX_BALANCE);
+                id + ".buy_in_max", BuyIn.UNLIMITED, BuyIn.UNLIMITED, Credits.MAX_BALANCE);
     }
 
     /** Off plays between players for nothing: no entry, no buy-in, nothing settled. */
@@ -182,12 +182,12 @@ public record BlackjackGame(String id, BlackjackFormat format) implements Game {
     }
 
     public SettingSpec.Amount entry() {
-        return new SettingSpec.Amount(id + ".entry", DEFAULT_ENTRY, 1, CreditAccount.MAX_BALANCE);
+        return new SettingSpec.Amount(id + ".entry", DEFAULT_ENTRY, 1, Credits.MAX_BALANCE);
     }
 
     public SettingSpec.Amount startingChips() {
         return new SettingSpec.Amount(id + ".starting_chips", DEFAULT_TOURNAMENT_CHIPS,
-                1, CreditAccount.MAX_BALANCE);
+                1, Credits.MAX_BALANCE);
     }
 
     public SettingSpec.Choice tournamentHands() {
@@ -202,7 +202,7 @@ public record BlackjackGame(String id, BlackjackFormat format) implements Game {
 
     /** What every seat plays for, every hand, against a player bank. */
     public SettingSpec.Amount fixedBet() {
-        return new SettingSpec.Amount(id + ".bet", DEFAULT_BANKER_BET, 1, CreditAccount.MAX_BALANCE);
+        return new SettingSpec.Amount(id + ".bet", DEFAULT_BANKER_BET, 1, Credits.MAX_BALANCE);
     }
 
     public SettingSpec.Choice bankerPlays() {

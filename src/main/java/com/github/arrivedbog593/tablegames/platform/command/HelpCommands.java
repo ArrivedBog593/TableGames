@@ -1,6 +1,5 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
-import com.github.arrivedbog593.economycore.platform.command.Pagination;
 import com.github.arrivedbog593.tablegames.platform.house.HouseStaff;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;

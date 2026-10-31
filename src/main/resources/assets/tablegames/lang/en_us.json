@@ -482,6 +482,8 @@
   "tablegames.settle.arithmetic_overflow": "The hand's totals were impossible",
   "tablegames.settle.refunded": "The hand could not be settled, so every wager was refunded",
 
+  "tablegames.command.page": "(page %s of %s)",
+  "tablegames.command.go_to_page": "Go to page %s",
   "tablegames.command.table.none_in_sight": "Look at a gaming table first",
   "tablegames.command.table.not_a_table": "That is not a gaming table",
   "tablegames.command.table.not_a_game_block": "Nothing to play at there",

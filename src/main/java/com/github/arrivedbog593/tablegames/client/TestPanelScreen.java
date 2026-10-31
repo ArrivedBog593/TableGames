@@ -1,8 +1,7 @@
 package com.github.arrivedbog593.tablegames.client;
 
-import com.github.arrivedbog593.economycore.client.Panels;
-import com.github.arrivedbog593.economycore.engine.CreditAccount;
-import com.github.arrivedbog593.economycore.platform.CreditFormat;
+import com.github.arrivedbog593.economycore.api.CreditFormat;
+import com.github.arrivedbog593.economycore.api.Credits;
 import com.github.arrivedbog593.tablegames.platform.block.RigOption;
 import com.github.arrivedbog593.tablegames.platform.network.OpenTestPanelPayload;
 import com.github.arrivedbog593.tablegames.platform.network.TestPanelPayload;
@@ -124,7 +123,7 @@ public class TestPanelScreen extends Screen {
     private static long parse(String text) {
         try {
             long value = Long.parseLong(text);
-            return value >= 0 && value <= CreditAccount.MAX_BALANCE ? value : -1;
+            return value >= 0 && value <= Credits.MAX_BALANCE ? value : -1;
         } catch (NumberFormatException notANumber) {
             return -1;
         }

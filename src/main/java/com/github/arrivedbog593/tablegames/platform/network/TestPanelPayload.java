@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.network;
 
-import com.github.arrivedbog593.economycore.platform.CreditFormat;
+import com.github.arrivedbog593.economycore.api.CreditFormat;
 import com.github.arrivedbog593.tablegames.TableGames;
 import com.github.arrivedbog593.tablegames.platform.block.GameBlockEntity;
 import com.github.arrivedbog593.tablegames.platform.house.SandboxFunds;

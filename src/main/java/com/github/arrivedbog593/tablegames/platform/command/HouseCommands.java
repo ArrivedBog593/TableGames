@@ -1,9 +1,8 @@
 package com.github.arrivedbog593.tablegames.platform.command;
 
-import com.github.arrivedbog593.economycore.engine.CreditAccount;
-import com.github.arrivedbog593.economycore.engine.CreditValueTable;
-import com.github.arrivedbog593.economycore.platform.CreditFormat;
-import com.github.arrivedbog593.economycore.platform.EconomyData;
+import com.github.arrivedbog593.economycore.api.Bank;
+import com.github.arrivedbog593.economycore.api.CreditFormat;
+import com.github.arrivedbog593.economycore.api.Credits;
 import com.github.arrivedbog593.tablegames.engine.house.HouseBankroll;
 import com.github.arrivedbog593.tablegames.engine.house.HouseExposure;
 import com.github.arrivedbog593.tablegames.platform.house.HouseSettings;
@@ -55,13 +54,13 @@ public final class HouseCommands {
                 .then(Commands.literal("reserve")
                         .executes(context -> showReserve(context.getSource()))
                         .then(Commands.argument("credits",
-                                        LongArgumentType.longArg(0, CreditAccount.MAX_BALANCE))
+                                        LongArgumentType.longArg(0, Credits.MAX_BALANCE))
                                 .executes(context -> reserve(context.getSource(),
                                         LongArgumentType.getLong(context, "credits")))))
 
                 .then(Commands.literal("plan")
                         .then(Commands.argument("maxbet",
-                                        LongArgumentType.longArg(1, CreditAccount.MAX_BALANCE))
+                                        LongArgumentType.longArg(1, Credits.MAX_BALANCE))
                                 .executes(context -> plan(context.getSource(),
                                         LongArgumentType.getLong(context, "maxbet"))))));
 
@@ -116,8 +115,8 @@ public final class HouseCommands {
         // What is actually committed right now, across every open table. The
         // exposure ceiling above is what the house is willing to risk; this is
         // how much of it is already spoken for.
-        int spread = EconomyData.get(source.getServer()).spreadPercent();
-        if (spread > CreditValueTable.NO_SPREAD) {
+        int spread = Bank.exchangeSpreadPercent(source.getServer());
+        if (spread > 0) {
             source.sendSuccess(() -> Component.translatable(
                             "tablegames.house.spread_line", spread)
                     .withStyle(ChatFormatting.GRAY), false);

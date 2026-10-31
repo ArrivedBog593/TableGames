@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.engine.games.slots;
 
-import com.github.arrivedbog593.economycore.engine.CreditAccount;
+import com.github.arrivedbog593.economycore.api.Credits;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.session.GameSession;
 import com.github.arrivedbog593.tablegames.engine.session.Seat;
@@ -197,17 +197,17 @@ public final class SlotsGame implements Game {
      */
     public SettingSpec.Amount denomination() {
         return new SettingSpec.Amount(id + ".denomination", DEFAULT_DENOMINATION, 1,
-                CreditAccount.MAX_BALANCE);
+                Credits.MAX_BALANCE);
     }
 
     /** The least a line may be played for, in credits. */
     public SettingSpec.Amount betMinimum() {
-        return new SettingSpec.Amount(id + ".bet_min", 1, 1, CreditAccount.MAX_BALANCE);
+        return new SettingSpec.Amount(id + ".bet_min", 1, 1, Credits.MAX_BALANCE);
     }
 
     /** The most, in credits, where zero leaves the bankroll alone to decide. */
     public SettingSpec.Amount betMaximum() {
-        return new SettingSpec.Amount(id + ".bet_max", 0, 0, CreditAccount.MAX_BALANCE);
+        return new SettingSpec.Amount(id + ".bet_max", 0, 0, Credits.MAX_BALANCE);
     }
 
     /** Which paytable the machine runs, and so how much it returns. */
@@ -222,13 +222,13 @@ public final class SlotsGame implements Game {
     /** The fewest credits a player may buy at once, in credits. */
     public SettingSpec.Amount buyInMinimum() {
         return new SettingSpec.Amount(id + ".buy_in_min", DEFAULT_BUY_IN_MINIMUM, 1,
-                CreditAccount.MAX_BALANCE);
+                Credits.MAX_BALANCE);
     }
 
     /** The most credits a meter may hold, in credits; zero for no cap. */
     public SettingSpec.Amount buyInMaximum() {
         return new SettingSpec.Amount(id + ".buy_in_max", BuyIn.UNLIMITED, BuyIn.UNLIMITED,
-                CreditAccount.MAX_BALANCE);
+                Credits.MAX_BALANCE);
     }
 
     @Override

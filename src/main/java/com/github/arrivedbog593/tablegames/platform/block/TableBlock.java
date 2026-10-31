@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
-import com.github.arrivedbog593.economycore.platform.item.AdminKeyItem;
+import com.github.arrivedbog593.economycore.api.Staff;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.platform.game.Games;
 import com.github.arrivedbog593.tablegames.platform.item.TableKeyItem;
@@ -154,7 +154,7 @@ public class TableBlock extends BaseEntityBlock implements GameBlock {
                                                        @NotNull Player player,
                                                        @NotNull InteractionHand hand,
                                                        @NotNull BlockHitResult hit) {
-        if (!(stack.getItem() instanceof TableKeyItem) && !(stack.getItem() instanceof AdminKeyItem)) {
+        if (!(stack.getItem() instanceof TableKeyItem) && !Staff.isAdminKey(stack)) {
             return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
         }
         if (level.isClientSide) {

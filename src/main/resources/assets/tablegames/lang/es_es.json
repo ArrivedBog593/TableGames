@@ -482,6 +482,8 @@
   "tablegames.settle.arithmetic_overflow": "Los totales de la mano eran imposibles",
   "tablegames.settle.refunded": "No se pudo liquidar la mano, así que se devolvieron todas las apuestas",
 
+  "tablegames.command.page": "(página %s de %s)",
+  "tablegames.command.go_to_page": "Ir a la página %s",
   "tablegames.command.table.none_in_sight": "Primero mira hacia una mesa de juego",
   "tablegames.command.table.not_a_table": "Eso no es una mesa de juego",
   "tablegames.command.table.not_a_game_block": "Ahí no hay nada a lo que jugar",

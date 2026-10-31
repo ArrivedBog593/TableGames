@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.engine.house;
 
-import com.github.arrivedbog593.economycore.engine.CreditAccount;
+import com.github.arrivedbog593.economycore.api.Credits;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
 import com.github.arrivedbog593.tablegames.engine.session.Payout;
 import org.junit.jupiter.api.Test;
@@ -88,6 +88,6 @@ class SandboxLedgerTest {
     void refusesFiguresOutsideWhatAnAccountCanHold() {
         assertThrows(IllegalArgumentException.class, () -> new SandboxLedger(-1, 0));
         assertThrows(IllegalArgumentException.class,
-                () -> new SandboxLedger(0, CreditAccount.MAX_BALANCE + 1));
+                () -> new SandboxLedger(0, Credits.MAX_BALANCE + 1));
     }
 }

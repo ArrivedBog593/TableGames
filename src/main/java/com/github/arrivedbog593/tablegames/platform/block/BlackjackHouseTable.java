@@ -1,6 +1,6 @@
 package com.github.arrivedbog593.tablegames.platform.block;
 
-import com.github.arrivedbog593.economycore.platform.CreditFormat;
+import com.github.arrivedbog593.economycore.api.CreditFormat;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackGame;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackLimits;
 import com.github.arrivedbog593.tablegames.engine.games.blackjack.BlackjackRules;

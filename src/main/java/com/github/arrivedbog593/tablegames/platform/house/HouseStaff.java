@@ -1,7 +1,7 @@
 package com.github.arrivedbog593.tablegames.platform.house;
 
-import com.github.arrivedbog593.economycore.platform.EconomyData;
-import com.github.arrivedbog593.economycore.platform.StaffRank;
+import com.github.arrivedbog593.economycore.api.Staff;
+import com.github.arrivedbog593.economycore.api.StaffRank;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -26,7 +26,7 @@ public final class HouseStaff {
 
     /** Whether this player is listed at the rank that reaches the casino. */
     public static boolean isAdmin(ServerPlayer player) {
-        return EconomyData.get(player.server).rankOf(player.getUUID())
+        return Staff.rankOf(player.server, player.getUUID())
                 .filter(rank -> rank == StaffRank.ADMIN)
                 .isPresent();
     }

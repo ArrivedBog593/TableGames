@@ -1,11 +1,9 @@
 package com.github.arrivedbog593.tablegames.platform.house;
 
-import com.github.arrivedbog593.economycore.engine.CreditAccount;
-import com.github.arrivedbog593.economycore.engine.PlayerCommitments;
-import com.github.arrivedbog593.economycore.platform.Commitments;
-import com.github.arrivedbog593.economycore.platform.CreditStorage;
-import com.github.arrivedbog593.economycore.platform.EconomyEvents;
-import com.github.arrivedbog593.economycore.platform.ServerBank;
+import com.github.arrivedbog593.economycore.api.Bank;
+import com.github.arrivedbog593.economycore.api.Credits;
+import com.github.arrivedbog593.economycore.api.PlayerCommitments;
+import com.github.arrivedbog593.economycore.api.Settlement;
 import com.github.arrivedbog593.tablegames.engine.game.Game;
 import com.github.arrivedbog593.tablegames.engine.house.HouseBankroll;
 import com.github.arrivedbog593.tablegames.engine.house.HouseExposure;
@@ -17,8 +15,6 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -72,7 +68,6 @@ public final class OutcomeSettler {
      */
     public static Result settle(MinecraftServer server, Game game,
                                 Outcome outcome, String detail) {
-        CreditStorage storage = CreditStorage.get(server);
         HouseBankroll bankroll = bankroll(server);
 
         SettlementAudit.Verdict verdict =
@@ -85,101 +80,48 @@ public final class OutcomeSettler {
             return Result.refused(verdict.reasonKey(), verdict.shortfall());
         }
 
-        // Balances can have moved since the hand began — a player might have
-        // spent at the shop from another screen — so what the seats believed
-        // is checked against what the accounts actually hold before anything
-        // is applied.
-        List<Payout> debits = new ArrayList<>();
-        List<Payout> credits = new ArrayList<>();
+        // The hand as the economy's movements: what each player lost, what
+        // each won, and the house's side of it. Balances can have moved since
+        // the hand began — a player might have spent at the shop from another
+        // screen — and the settlement checks every account against what it
+        // actually holds before anything moves, takes before it pays, and
+        // logs only once all of it has moved.
+        Settlement settlement = Settlement.create();
         for (Payout payout : outcome.payouts()) {
             if (payout.delta() < 0) {
-                long owed = -payout.delta();
-                if (storage.balanceOf(payout.playerId()) < owed) {
-                    LOGGER.error("[Economy] Refused to settle a hand of {}: {} owes {} but "
-                                    + "holds {}. Nothing was moved.",
-                            game.id(), payout.playerId(), owed,
-                            storage.balanceOf(payout.playerId()));
-                    return Result.refused("tablegames.settle.player_cannot_cover", owed);
-                }
-                debits.add(payout);
-            } else if (payout.delta() > 0) {
-                // The balance cap is checked here rather than at the moment of
-                // paying, because by then the losers have already been debited
-                // and there is no clean way back. A deposit that would breach
-                // the cap does nothing and returns false, so a winner who
-                // cannot be paid has to stop the whole settlement, not just
-                // their own line of it.
-                if (!CreditAccount.canHold(storage.balanceOf(payout.playerId()),
-                        payout.delta())) {
-                    LOGGER.error("[Economy] Refused to settle a hand of {}: paying {} would "
-                                    + "breach the balance cap. Nothing was moved.",
-                            game.id(), payout.playerId());
-                    return Result.refused("tablegames.settle.player_cap_reached", 0);
-                }
-                credits.add(payout);
+                settlement.move(payout.playerId(), payout.delta(), HouseTransactions.BET);
             }
         }
-
-        // Take before giving. If the order were reversed, a winner could be
-        // paid from credits a loser turns out not to have.
-        for (Payout payout : debits) {
-            storage.withdraw(payout.playerId(), -payout.delta());
-        }
-
-        if (verdict.housePays() && !ServerBank.debit(storage, -verdict.houseDelta())) {
-            // The audit already checked this, so reaching here means the
-            // bankroll moved underneath us. Undo the debits and refuse.
-            for (Payout payout : debits) {
-                storage.deposit(payout.playerId(), -payout.delta());
+        for (Payout payout : outcome.payouts()) {
+            if (payout.delta() > 0) {
+                settlement.move(payout.playerId(), payout.delta(), HouseTransactions.PAYOUT);
             }
-            LOGGER.error("[Economy] The bankroll moved mid-settlement for a hand of {}. "
-                    + "Rolled back.", game.id());
-            return Result.refused("tablegames.settle.house_cannot_cover", 0);
-        }
-
-        for (Payout payout : credits) {
-            if (!storage.deposit(payout.playerId(), payout.delta())) {
-                // Pre-checked above, so this is unreachable unless something
-                // moved the balance from another thread. Loud, because a
-                // winner silently not paid is the worst failure this class has.
-                LOGGER.error("[Economy] Paid nothing to {} in a hand of {}: the deposit was "
-                                + "refused after the cap check passed. Balance {}, owed {}.",
-                        payout.playerId(), game.id(),
-                        storage.balanceOf(payout.playerId()), payout.delta());
-            }
-        }
-
-        if (verdict.houseDelta() > 0) {
-            ServerBank.credit(storage, verdict.houseDelta());
-        }
-
-        // Every credit has moved. Only now does any of it reach the log.
-        //
-        // Writing a line the moment a balance changes looks safer and is the
-        // opposite: EconomyEvents.record also advances lastSequence, and BET
-        // is a recoverable type. A settlement that wrote its debits and then
-        // rolled them back would leave the log claiming movements that never
-        // happened, and startup recovery would faithfully reapply them. The
-        // log describes settlements that are completed, or it describes nothing.
-        String context = game.id() + " " + detail;
-        for (Payout payout : debits) {
-            EconomyEvents.record(storage, HouseTransactions.BET, payout.playerId(),
-                    payout.delta(), storage.balanceOf(payout.playerId()), context);
-        }
-        for (Payout payout : credits) {
-            EconomyEvents.record(storage, HouseTransactions.PAYOUT, payout.playerId(),
-                    payout.delta(), storage.balanceOf(payout.playerId()), context);
         }
         if (verdict.houseDelta() > 0) {
-            ServerBank.record(storage,
-                    outcome.rake() > 0 ? HouseTransactions.RAKE : HouseTransactions.PAYOUT,
-                    verdict.houseDelta(), context);
+            settlement.move(Bank.ACCOUNT, verdict.houseDelta(),
+                    outcome.rake() > 0 ? HouseTransactions.RAKE : HouseTransactions.PAYOUT);
         } else if (verdict.housePays()) {
-            ServerBank.record(storage, HouseTransactions.HOUSE_PAYOUT,
-                    verdict.houseDelta(), context);
+            settlement.move(Bank.ACCOUNT, verdict.houseDelta(), HouseTransactions.HOUSE_PAYOUT);
         }
 
+        Settlement.Result moved = settlement.apply(server, game.id() + " " + detail);
+        if (!moved.applied()) {
+            LOGGER.error("[Economy] Refused to settle a hand of {}: {} for {} (short {}). "
+                            + "Nothing was moved. Context: {}",
+                    game.id(), moved.refusal(), moved.account(), moved.shortfall(), detail);
+            return Result.refused(refusalKey(moved), moved.shortfall());
+        }
         return Result.applied(verdict.houseDelta());
+    }
+
+    /** Why the economy refused, in the words a table shows its players. */
+    private static String refusalKey(Settlement.Result refused) {
+        if (refused.refusal() == Settlement.Refusal.BALANCE_CAP) {
+            return "tablegames.settle.player_cap_reached";
+        }
+        return Bank.ACCOUNT.equals(refused.account())
+                ? "tablegames.settle.house_cannot_cover"
+                : "tablegames.settle.player_cannot_cover";
     }
 
     /**
@@ -224,7 +166,7 @@ public final class OutcomeSettler {
      */
     public static HouseBankroll bankroll(MinecraftServer server) {
         HouseSettings settings = HouseSettings.get(server);
-        return new HouseBankroll(ServerBank.balance(CreditStorage.get(server)),
+        return new HouseBankroll(Bank.balance(server),
                 settings.exposurePercent(), settings.minimumReserve())
                 .withReserveAtLeast(EXPOSURE.total());
     }
@@ -266,7 +208,7 @@ public final class OutcomeSettler {
      * honor it too: a stake is one kind of promise among others.
      */
     public static PlayerCommitments stakes() {
-        return Commitments.players();
+        return Credits.commitments();
     }
 
     /** Records what one player now has on one table. Zero releases it. */
@@ -287,7 +229,7 @@ public final class OutcomeSettler {
      * that are already promised to a spin.
      */
     public static long spendable(MinecraftServer server, UUID playerId) {
-        return Commitments.spendable(server, playerId);
+        return Credits.spendable(server, playerId);
     }
 
     /**

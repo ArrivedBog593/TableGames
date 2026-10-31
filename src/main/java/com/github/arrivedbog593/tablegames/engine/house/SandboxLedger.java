@@ -1,7 +1,7 @@
 package com.github.arrivedbog593.tablegames.engine.house;
 
-import com.github.arrivedbog593.economycore.engine.CreditAccount;
-import com.github.arrivedbog593.economycore.engine.PlayerCommitments;
+import com.github.arrivedbog593.economycore.api.Credits;
+import com.github.arrivedbog593.economycore.api.PlayerCommitments;
 import com.github.arrivedbog593.tablegames.engine.session.Outcome;
 import com.github.arrivedbog593.tablegames.engine.session.Payout;
 
@@ -38,10 +38,10 @@ public final class SandboxLedger {
      * @param startingBalance what each player starts with
      */
     public SandboxLedger(long bank, long startingBalance) {
-        if (bank < 0 || bank > CreditAccount.MAX_BALANCE) {
+        if (bank < 0 || bank > Credits.MAX_BALANCE) {
             throw new IllegalArgumentException("Bank out of range: " + bank);
         }
-        if (startingBalance < 0 || startingBalance > CreditAccount.MAX_BALANCE) {
+        if (startingBalance < 0 || startingBalance > Credits.MAX_BALANCE) {
             throw new IllegalArgumentException("Starting balance out of range: " + startingBalance);
         }
         this.bank = bank;
@@ -102,7 +102,7 @@ public final class SandboxLedger {
                 return new SettlementAudit.Verdict(false,
                         "tablegames.settle.player_cannot_cover", 0, -payout.delta());
             }
-            if (payout.delta() > 0 && !CreditAccount.canHold(held, payout.delta())) {
+            if (payout.delta() > 0 && !Credits.canHold(held, payout.delta())) {
                 return new SettlementAudit.Verdict(false, "tablegames.settle.player_cap_reached", 0, 0);
             }
         }
