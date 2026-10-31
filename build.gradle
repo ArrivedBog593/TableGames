@@ -64,6 +64,26 @@ neoForge {
             gameDirectory = file("run/${minecraft_version}/server")
         }
 
+        // The same three against EconomyCore from Maven local, for when it is being
+        // changed alongside this mod: publishToMavenLocal there, then run these. Same
+        // game folders, so the same worlds and the same accounts.
+        clientLocal {
+            client()
+            gameDirectory = file("run/${minecraft_version}/client")
+        }
+
+        clientAltLocal {
+            client()
+            gameDirectory = file("run/${minecraft_version}/clientAlt")
+            programArguments.addAll '--username', 'Dev2'
+        }
+
+        serverLocal {
+            server()
+            programArgument '--nogui'
+            gameDirectory = file("run/${minecraft_version}/server")
+        }
+
         // This run config launches GameTestServer and runs all registered gametests, then exits.
         // By default, the server will crash when no gametests are provided.
         // The gametest system is also enabled by default for other run configs under the /test command.
@@ -116,12 +136,26 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+// Whether EconomyCore comes from Maven local rather than CurseForge. Runs share
+// one classpath, so a run cannot pick its own copy; instead, asking for one of
+// the *Local runs switches the whole build. The requested task names are part of
+// the configuration cache key, so the two never share a cached configuration.
+def localRuns = ['runClientLocal', 'runClientAltLocal', 'runServerLocal']
+def economycoreLocal = providers.gradleProperty('economycore_local').getOrElse('false').toBoolean() ||
+        gradle.startParameter.taskNames.any { localRuns.contains(it.tokenize(':').last()) }
+
 dependencies {
     // EconomyCore: the accounts, the exchange and the shop this mod spends
-    // from. During development it comes from Maven local (run
-    // `./gradlew publishToMavenLocal` in EconomyCore after changing it);
-    // once published, from Modrinth's Maven.
-    implementation "com.github.arrivedbog593:economycore:${economycore_version}"
+    // from. Normally the published file, from CurseForge through CurseMaven,
+    // so a build is made against exactly what players download. While
+    // EconomyCore is being changed alongside this mod, start one of the *Local
+    // runs, or build with -Peconomycore_local=true, to take it from Maven local
+    // instead (run `./gradlew publishToMavenLocal` in EconomyCore first).
+    if (economycoreLocal) {
+        implementation "com.github.arrivedbog593:economycore:${economycore_version}"
+    } else {
+        implementation "curse.maven:economy-core-1775541:${economycore_curse_file}"
+    }
 
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
